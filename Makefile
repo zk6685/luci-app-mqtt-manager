@@ -12,6 +12,9 @@ LUCI_MAINTAINER:=zk6685 <zk6685@qq.com>
 
 PKG_LICENSE:=MIT
 
+# 同时输出 ipk (opkg) 和 apk (PonWrt/ImmortalWrt apk 分支)
+PKG_TARGETS := ipkg apk
+
 include $(TOPDIR)/feeds/luci/luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature
