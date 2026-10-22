@@ -38,9 +38,11 @@ jobs:
 
       - name: 拷贝插件到 package
         run: |
-          rm -rf sdk/package/luci-app-mqtt-manager
-          cp -r . sdk/package/luci-app-mqtt-manager
+          ls sdk/ | head -20
+          mkdir -p sdk/package/luci-app-mqtt-manager
+          cp -a . sdk/package/luci-app-mqtt-manager/
           rm -rf sdk/package/luci-app-mqtt-manager/.git sdk/package/luci-app-mqtt-manager/.github
+          echo "拷贝后内容:" && ls -la sdk/package/luci-app-mqtt-manager/
 
       - name: 更新 feeds
         run: |
