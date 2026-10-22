@@ -31,9 +31,14 @@ jobs:
       - name: 安装构建依赖
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q build-essential ccache ecj fastjar file g++ gawk \
-            gettext git libelf-dev libncurses5-dev libstdc++6 \
-            python3 python3-pip python3-setuptools rsync subversion swig time unzip wget zstd
+          sudo apt-get install -y -q \
+            build-essential ccache ecj fastjar file g++ gawk gettext git \
+            libelf-dev libncurses5-dev libncursesw5-dev zlib1g-dev \
+            libssl-dev libtool-bin libjson-c-dev libpcre2-dev \
+            python3 python3-pip python3-setuptools rsync subversion swig time \
+            unzip wget zstd gzip bzip2 xz-utils make patch diffutils \
+            flex bison autoconf automake cmake curl binutils brotli liblz4-dev \
+            libdeflate-dev libzstd-dev
 
       - name: 检出 PonWrt/ImmortalWrt 源码树
         run: |
