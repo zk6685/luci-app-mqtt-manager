@@ -1,0 +1,32 @@
+{
+    "admin/services/mqtt_manager": {
+        "title": "MQTT Manager",
+        "order": 60,
+        "action": { "type": "firstchild" },
+        "depends": { "acl": [ "admin" ] }
+    },
+    "admin/services/mqtt_manager/status": {
+        "title": "状态",
+        "order": 10,
+        "action": { "type": "template", "path": "mqtt_manager/status" },
+        "depends": { "acl": [ "admin" ] }
+    },
+    "admin/services/mqtt_manager/users": {
+        "title": "用户管理",
+        "order": 20,
+        "action": { "type": "template", "path": "mqtt_manager/users" },
+        "depends": { "acl": [ "admin" ] }
+    },
+    "admin/services/mqtt_manager/firewall": {
+        "title": "防火墙 & TLS",
+        "order": 30,
+        "action": { "type": "template", "path": "mqtt_manager/firewall" },
+        "depends": { "acl": [ "admin" ] }
+    },
+    "admin/services/mqtt_manager/components": {
+        "title": "组件管理",
+        "order": 40,
+        "action": { "type": "template", "path": "mqtt_manager/components" },
+        "depends": { "acl": [ "admin" ] }
+    }
+}
