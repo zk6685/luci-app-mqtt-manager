@@ -85,7 +85,10 @@ jobs:
             sed -i 's|https://www.tecgraf.puc-rio.br/lua/ftp/|https://mirror.nju.edu.cn/lua/ftp/ https://www.tecgraf.puc-rio.br/lua/ftp/|' "$LUA_MK"
           fi
           grep -n "PKG_SOURCE_URL" "$LUA_MK" 2>/dev/null | head
-          # 若 lua.org 仍不通，预先把 tarball 放进 dl/（download.pl 会用系统 curl 直下）
+          # 先构建 host 工具链（含 libdeflate-gzip，供解压用），再编包
+          make tools/install 2>&1 | tail -5
+          make package/libs/libdeflate/host/install 2>&1 | tail -10
+          ls -la staging_dir/host/bin/libdeflate-gzip 2>/dev/null || echo "!! libdeflate-gzip 仍未生成"
           make package/luci-app-mqtt-manager/compile V=s 2>&1 | tee /tmp/build.log | tail -50
 
       - name: 收集 ipk 和 apk 产物
