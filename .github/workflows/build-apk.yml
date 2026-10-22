@@ -13,38 +13,28 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: ponwrt-an7581
-            sdk_url: "https://openwrt.eamonxg.fun/snapshots/targets/airoha/an7581"
-            arch: aarch64
+          # mt7981b (zk-daepon) 同款 filogic 平台，aarch64
           - name: immortalwrt-filogic
-            sdk_url: "https://downloads.immortalwrt.org/releases/24.10-SNAPSHOT/targets/mediatek/filogic"
+            sdk_url: "https://downloads.immortalwrt.org/releases/24.10-SNAPSHOT/targets/mediatek/filogic/immortalwrt-sdk-24.10-SNAPSHOT-mediatek-filogic_gcc-13.3.0_musl.Linux-x86_64.tar.zst"
             arch: aarch64
 
     steps:
       - name: 检出插件源码
         uses: actions/checkout@v4
 
-      - name: 列出 SDK 目录获取准确文件名
+      - name: 安装 zstd 并下载 SDK
         run: |
-          echo "目录: $SDK_URL"
-          ls -la
-          curl -s "$SDK_URL/" | grep -oE 'openwrt-sdk[^"<]*\.tar\.xz' | head -3 || true
+          sudo apt-get update -q && sudo apt-get install -y -q zstd
+          wget -q --timeout=120 --tries=3 -O sdk.tar.zst "$SDK_URL"
+          ls -la sdk.tar.zst
         env:
           SDK_URL: ${{ matrix.sdk_url }}
 
-      - name: 下载并解压 SDK
+      - name: 解压 SDK
         run: |
-          set -e
           mkdir -p sdk
-          # 从目录页解析 SDK 文件名
-          SDK_FILE=$(curl -s "$SDK_URL/" | grep -oE 'openwrt-sdk[^"<]*\.tar\.xz' | head -1 || true)
-          echo "SDK 文件: $SDK_FILE"
-          if [ -z "$SDK_FILE" ]; then
-            echo "::error::无法在 $SDK_URL 找到 SDK，请检查镜像"; exit 1
-          fi
-          wget -q -O sdk.tar.xz "$SDK_URL/$SDK_FILE"
-          tar -xf sdk.tar.xz -C sdk --strip-components=1
-          ls sdk/ | head
+          tar -I zstd -xf sdk.tar.zst -C sdk --strip-components=1
+          echo "SDK 内容:" && ls sdk/ | head
 
       - name: 拷贝插件到 package
         run: |
