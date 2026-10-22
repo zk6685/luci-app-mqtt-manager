@@ -1,0 +1,79 @@
+name: Build luci-app-mqtt-manager (apk)
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ponwrt-an7581
+            sdk_url: "https://openwrt.eamonxg.fun/snapshots/targets/airoha/an7581"
+            arch: aarch64
+          - name: immortalwrt-filogic
+            sdk_url: "https://downloads.immortalwrt.org/releases/24.10-SNAPSHOT/targets/mediatek/filogic"
+            arch: aarch64
+
+    steps:
+      - name: 检出插件源码
+        uses: actions/checkout@v4
+
+      - name: 列出 SDK 目录获取准确文件名
+        run: |
+          echo "目录: $SDK_URL"
+          ls -la
+          curl -s "$SDK_URL/" | grep -oE 'openwrt-sdk[^"<]*\.tar\.xz' | head -3 || true
+        env:
+          SDK_URL: ${{ matrix.sdk_url }}
+
+      - name: 下载并解压 SDK
+        run: |
+          set -e
+          mkdir -p sdk
+          # 从目录页解析 SDK 文件名
+          SDK_FILE=$(curl -s "$SDK_URL/" | grep -oE 'openwrt-sdk[^"<]*\.tar\.xz' | head -1 || true)
+          echo "SDK 文件: $SDK_FILE"
+          if [ -z "$SDK_FILE" ]; then
+            echo "::error::无法在 $SDK_URL 找到 SDK，请检查镜像"; exit 1
+          fi
+          wget -q -O sdk.tar.xz "$SDK_URL/$SDK_FILE"
+          tar -xf sdk.tar.xz -C sdk --strip-components=1
+          ls sdk/ | head
+
+      - name: 拷贝插件到 package
+        run: |
+          rm -rf sdk/package/luci-app-mqtt-manager
+          cp -r . sdk/package/luci-app-mqtt-manager
+          rm -rf sdk/package/luci-app-mqtt-manager/.git sdk/package/luci-app-mqtt-manager/.github
+
+      - name: 更新 feeds
+        run: |
+          cd sdk
+          ./scripts/feeds update -a 2>&1 | tail -3 || true
+          ./scripts/feeds install -a 2>&1 | tail -3 || true
+
+      - name: 编译 (生成 apk/ipk)
+        run: |
+          cd sdk
+          make defconfig 2>&1 | tail -2
+          make package/luci-app-mqtt-manager/compile V=s 2>&1 | tee /tmp/build.log | tail -30
+
+      - name: 收集产物
+        run: |
+          mkdir -p artifact
+          find sdk -name "luci-app-mqtt-manager*" \( -name "*.ipk" -o -name "*.apk" \) -exec cp {} artifact/ \;
+          echo "=== 产物 ==="
+          ls -la artifact/
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: artifact/
+          if-no-files-found: error
