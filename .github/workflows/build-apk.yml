@@ -25,6 +25,9 @@ jobs:
             target: "mediatek/filogic"
 
     steps:
+      - name: 检出插件源码 (luasrc/root/Makefile)
+        uses: actions/checkout@v4
+
       - name: 安装构建依赖
         run: |
           sudo apt-get update -q
