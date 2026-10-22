@@ -1,4 +1,4 @@
-name: Build luci-app-mqtt-manager (apk)
+name: Build luci-app-mqtt-manager (.apk)
 
 on:
   push:
@@ -8,60 +8,70 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
         include:
-          # mt7981b (zk-daepon) 同款 filogic 平台，aarch64
+          # PonWrt 目标: Airoha AN7581 (mt7981b / zk-daepon)
+          - name: ponwrt-an7581
+            repo: "pbs05/ponwrt"
+            branch: "master"
+            target: "airoha/an7581"
+          # ImmortalWrt filogic (通用 aarch64 fallback)
           - name: immortalwrt-filogic
-            sdk_url: "https://downloads.immortalwrt.org/releases/24.10-SNAPSHOT/targets/mediatek/filogic/immortalwrt-sdk-24.10-SNAPSHOT-mediatek-filogic_gcc-13.3.0_musl.Linux-x86_64.tar.zst"
-            arch: aarch64
+            repo: "immortalwrt/immortalwrt"
+            branch: "master"
+            target: "mediatek/filogic"
 
     steps:
-      - name: 检出插件源码
-        uses: actions/checkout@v4
-
-      - name: 安装 zstd 并下载 SDK
+      - name: 安装构建依赖
         run: |
-          sudo apt-get update -q && sudo apt-get install -y -q zstd
-          wget -q --timeout=120 --tries=3 -O sdk.tar.zst "$SDK_URL"
-          ls -la sdk.tar.zst
+          sudo apt-get update -q
+          sudo apt-get install -y -q build-essential ccache ecj fastjar file g++ gawk \
+            gettext git libelf-dev libncurses5-dev libstdc++6 \
+            python3 python3-pip python3-setuptools rsync subversion swig time unzip wget zstd
+
+      - name: 检出 PonWrt/ImmortalWrt 源码树
+        run: |
+          git clone --depth 1 -b "$BRANCH" "https://github.com/$REPO.git" openwrt
+          echo "源码树: $REPO @ $BRANCH"
         env:
-          SDK_URL: ${{ matrix.sdk_url }}
-
-      - name: 解压 SDK
-        run: |
-          mkdir -p sdk
-          tar -I zstd -xf sdk.tar.zst -C sdk --strip-components=1
-          echo "SDK 内容:" && ls sdk/ | head
+          REPO: ${{ matrix.repo }}
+          BRANCH: ${{ matrix.branch }}
 
       - name: 拷贝插件到 package
         run: |
-          ls sdk/ | head -20
-          mkdir -p sdk/package/luci-app-mqtt-manager
-          # 只复制插件源码，绝不复制 sdk 目录本身（避免 cp 自身复制）
-          cp -r luasrc sdk/package/luci-app-mqtt-manager/
-          cp -r root sdk/package/luci-app-mqtt-manager/
-          cp Makefile README.md .gitignore sdk/package/luci-app-mqtt-manager/
-          echo "拷贝后内容:" && ls -la sdk/package/luci-app-mqtt-manager/
+          mkdir -p openwrt/package/luci-app-mqtt-manager
+          cp -r luasrc openwrt/package/luci-app-mqtt-manager/
+          cp -r root openwrt/package/luci-app-mqtt-manager/
+          cp Makefile README.md openwrt/package/luci-app-mqtt-manager/
+          echo "插件内容:" && ls openwrt/package/luci-app-mqtt-manager/
 
       - name: 更新 feeds
         run: |
-          cd sdk
-          ./scripts/feeds update -a 2>&1 | tail -3 || true
-          ./scripts/feeds install -a 2>&1 | tail -3 || true
+          cd openwrt
+          ./scripts/feeds update -a 2>&1 | tail -5 || true
+          ./scripts/feeds install -a 2>&1 | tail -5 || true
 
-      - name: 编译 (生成 apk/ipk)
+      - name: 配置并编译 (USE_APK 输出 .apk)
         run: |
-          cd sdk
-          make defconfig 2>&1 | tail -2
-          make package/luci-app-mqtt-manager/compile V=s 2>&1 | tee /tmp/build.log | tail -30
+          cd openwrt
+          # 生成目标配置
+          TARGET_UPPER=$(echo "$TARGET" | sed 's|/|_|g' | tr 'a-z' 'A-Z')
+          echo "CONFIG_TARGET_${TARGET_UPPER}=y" > .config
+          echo "CONFIG_PACKAGE_luci-app-mqtt-manager=y" >> .config
+          echo "CONFIG_USE_APK=y" >> .config
+          cat .config
+          make defconfig 2>&1 | tail -5
+          make package/luci-app-mqtt-manager/compile V=s 2>&1 | tee /tmp/build.log | tail -40
+        env:
+          TARGET: ${{ matrix.target }}
 
-      - name: 收集产物
+      - name: 收集 .apk 产物
         run: |
           mkdir -p artifact
-          find sdk -name "luci-app-mqtt-manager*" \( -name "*.ipk" -o -name "*.apk" \) -exec cp {} artifact/ \;
+          find openwrt/bin -name "luci-app-mqtt-manager*" \( -name "*.apk" -o -name "*.ipk" \) -exec cp {} artifact/ \;
           echo "=== 产物 ==="
           ls -la artifact/
 
