@@ -1,0 +1,75 @@
+<%+header%>
+<h2><%:MQTT Manager%> - <%:防火墙 & TLS%></h2>
+
+<style>
+.mqtt-card { background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:1.25rem; margin-bottom:1rem; }
+.mqtt-table { width:100%; border-collapse:collapse; margin:10px 0; }
+.mqtt-table th, .mqtt-table td { border:1px solid #e5e7eb; padding:8px; text-align:left; font-size:14px; }
+.mqtt-table th { background:#f9fafb; font-weight:bold; }
+.mqtt-btn { padding:6px 16px; border:none; border-radius:6px; cursor:pointer; font-size:14px; }
+.mqtt-btn-warning { background:#d97706; color:#fff; }
+.mqtt-btn-primary { background:#2563eb; color:#fff; }
+.mqtt-btn-success { background:#16a34a; color:#fff; }
+</style>
+
+<div class="mqtt-card">
+    <h3><%:防火墙规则%></h3>
+    <table class="mqtt-table">
+        <thead><tr><th><%:规则名称%></th><th><%:端口%></th></tr></thead>
+        <tbody id="fw-list"></tbody>
+    </table>
+    <button class="mqtt-btn mqtt-btn-warning" onclick="addFwV4()"><%:添加IPv4放行1883%></button>
+    <button class="mqtt-btn mqtt-btn-warning" onclick="addFwV6()"><%:添加IPv6放行1883%></button>
+    <span id="fw-tip" style="margin-left:10px;color:#d97706;"></span>
+</div>
+
+<div class="mqtt-card">
+    <h3><%:TLS证书状态%></h3>
+    <p style="color:#666;"><%:证书目录:%> /etc/mosquitto/cert/</p>
+    <p style="color:#666;"><%:上传文件请命名为:%> cert.pem <%:和%> privkey.pem</p>
+</div>
+
+<script type="text/javascript">
+function getToken() {
+    var m = document.cookie.match(/luci_token=([0-9a-f]+)/);
+    return m ? m[1] : null;
+}
+function api(action, data) {
+    var fd = new FormData();
+    if (data) for (var k in data) fd.append(k, data[k]);
+    var token = getToken();
+    return fetch("/cgi-bin/luci/admin/services/mqtt_manager/api/" + action, {
+        method: "POST", body: fd, credentials: "same-origin",
+        headers: token ? {"X-Luci-Token": token} : {}
+    });
+}
+function loadFw() {
+    api("fw_list").then(function(r){return r.json()}).then(function(list){
+        var tb = document.getElementById("fw-list");
+        tb.innerHTML = "";
+        if (!list || list.length === 0) {
+            tb.innerHTML = '<tr><td colspan="2" style="text-align:center;color:#999;"><%:暂无规则%></td></tr>';
+            return;
+        }
+        list.forEach(function(item){
+            var tr = document.createElement("tr");
+            tr.innerHTML = '<td>' + item.name + '</td><td>' + item.port + '</td>';
+            tb.appendChild(tr);
+        });
+    });
+}
+function addFwV4() {
+    if (!confirm("<%:确认添加WAN口放行TCP 1883 (IPv4)？%>")) return;
+    api("fw_add", {port:"1883", family:"ipv4"}).then(function(r){return r.json()}).then(function(d){
+        document.getElementById("fw-tip").textContent = d.msg; loadFw();
+    });
+}
+function addFwV6() {
+    if (!confirm("<%:确认添加WAN口放行TCP 1883 (IPv6)？%>")) return;
+    api("fw_add", {port:"1883", family:"ipv6"}).then(function(r){return r.json()}).then(function(d){
+        document.getElementById("fw-tip").textContent = d.msg; loadFw();
+    });
+}
+loadFw();
+</script>
+<%+footer%>

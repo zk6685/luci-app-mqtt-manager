@@ -1,0 +1,8 @@
+*.ipk
+*.apk
+*.o
+*.a
+*.so
+*.pyc
+*~
+.DS_Store

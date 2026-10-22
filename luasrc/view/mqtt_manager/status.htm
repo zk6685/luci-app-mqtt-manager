@@ -1,0 +1,60 @@
+<%+header%>
+<h2><%:MQTT Manager%> - <%:状态%></h2>
+
+<style>
+.mqtt-card { background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:1.25rem; margin-bottom:1rem; }
+.mqtt-status-badge { display:inline-block; padding:6px 16px; border-radius:20px; font-size:15px; font-weight:bold; }
+.badge-running { background:#dcfce7; color:#16a34a; }
+.badge-stopped { background:#fee2e2; color:#dc2626; }
+.mqtt-btn { padding:6px 16px; border:none; border-radius:6px; cursor:pointer; font-size:14px; }
+.mqtt-btn-primary { background:#2563eb; color:#fff; }
+#mqtt-output { background:#111827; color:#34d399; padding:1rem; border-radius:8px; white-space:pre-wrap; font-family:monospace; font-size:13px; min-height:200px; margin-top:10px; }
+</style>
+
+<div class="mqtt-card">
+    <h3><%:服务状态%></h3>
+    <p><%:Mosquitto 服务%>: <span id="svc-badge" class="mqtt-status-badge badge-stopped"><%:检测中...%></span></p>
+    <p><%:监听端口%>: 1883 (IPv4+IPv6双栈)</p>
+    <p style="margin-top:12px;">
+        <button class="mqtt-btn mqtt-btn-primary" onclick="restartMosq()"><%:重启服务%></button>
+        <button class="mqtt-btn mqtt-btn-primary" onclick="runInspect()"><%:一键巡检%></button>
+        <button class="mqtt-btn mqtt-btn-primary" onclick="clearOutput()"><%:清空输出%></button>
+    </p>
+    <div id="mqtt-output"></div>
+</div>
+
+<script type="text/javascript">
+function getToken() {
+    var m = document.cookie.match(/luci_token=([0-9a-f]+)/);
+    return m ? m[1] : null;
+}
+function api(action, data) {
+    var fd = new FormData();
+    if (data) for (var k in data) fd.append(k, data[k]);
+    var token = getToken();
+    return fetch("/cgi-bin/luci/admin/services/mqtt_manager/api/" + action, {
+        method: "POST", body: fd, credentials: "same-origin",
+        headers: token ? {"X-Luci-Token": token} : {}
+    });
+}
+function loadStatus() {
+    api("status").then(function(r){return r.json()}).then(function(d){
+        var b = document.getElementById("svc-badge");
+        if (d.status === "running") { b.className = "mqtt-status-badge badge-running"; b.textContent = "<%:运行中%>"; }
+        else { b.className = "mqtt-status-badge badge-stopped"; b.textContent = "<%:已停止%>"; }
+    }).catch(function(){});
+}
+function restartMosq() {
+    if (!confirm("<%:确认重启Mosquitto？%>")) return;
+    api("restart").then(function(){ setTimeout(loadStatus, 3000); });
+}
+function runInspect() {
+    var out = document.getElementById("mqtt-output");
+    out.textContent = "<%:正在巡检...%>";
+    api("inspect").then(function(r){return r.text()}).then(function(t){ out.textContent = t; })
+    .catch(function(e){ out.textContent = "<%:巡检失败:%> " + e; });
+}
+function clearOutput() { document.getElementById("mqtt-output").textContent = ""; }
+loadStatus();
+</script>
+<%+footer%>
