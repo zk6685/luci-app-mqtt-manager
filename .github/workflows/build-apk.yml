@@ -6,27 +6,30 @@ on:
     tags: [ 'v*' ]
   workflow_dispatch:
 
-# 两个独立 job 并行：ipk (opkg 后端) 与 apk (apk 后端) 环境隔离，一次触发两款
+# 两个独立 job 并行，各自用各自环境的 SDK（环境隔离）：
+#  - build-ipk: ImmortalWrt 24.10 SDK (opkg 后端) → .ipk
+#  - build-apk: ImmortalWrt master SNAPSHOT SDK (apk 后端) → .apk
 jobs:
   build-ipk:
-    name: Build IPK (opkg)
+    name: Build IPK (opkg, 24.10)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: immortalwrt-master-ipk
-            sdk_dir: "https://downloads.immortalwrt.org/snapshots/targets/mediatek/filogic"
+          - name: immortalwrt-2410-ipk
+            sdk_dir: "https://downloads.immortalwrt.org/releases/24.10-SNAPSHOT/targets/mediatek/filogic"
 
     steps:
       - name: 检出插件源码
         uses: actions/checkout@v4
 
-      - name: 安装 zstd 并下载 master SDK
+      - name: 安装 zstd 并下载 24.10 SDK
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q zstd
           SDK_FILE=$(curl -s "$SDK_DIR/" | grep -oE 'immortalwrt-sdk-[^"<]*\.tar\.zst' | head -1)
           echo "SDK 文件: $SDK_FILE"
+          if [ -z "$SDK_FILE" ]; then echo "::error::SDK 未找到"; exit 1; fi
           wget -q --timeout=180 --tries=3 -O sdk.tar.zst "$SDK_DIR/$SDK_FILE"
           ls -la sdk.tar.zst
         env:
@@ -50,7 +53,7 @@ jobs:
           ./scripts/feeds update -a 2>&1 | tail -3 || true
           ./scripts/feeds install -a 2>&1 | tail -3 || true
 
-      - name: 编译 IPK (默认 ipkg 后端)
+      - name: 编译 IPK (opkg 后端)
         run: |
           cd sdk
           make defconfig 2>&1 | tail -3
@@ -59,7 +62,7 @@ jobs:
           find sdk/bin -name "luci-app-mqtt-manager*" -name "*.ipk" -exec cp {} artifact/ \; 2>/dev/null
           find sdk -name "luci-app-mqtt-manager*" -name "*.ipk" -exec cp {} artifact/ \; 2>/dev/null
           echo "=== IPK 产物 ==="
-          ls -la artifact/
+          ls -la artifact/ || true
 
       - name: 上传产物
         uses: actions/upload-artifact@v4
@@ -69,7 +72,7 @@ jobs:
           if-no-files-found: error
 
   build-apk:
-    name: Build APK (apk)
+    name: Build APK (apk, master)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -87,6 +90,7 @@ jobs:
           sudo apt-get update -q && sudo apt-get install -y -q zstd
           SDK_FILE=$(curl -s "$SDK_DIR/" | grep -oE 'immortalwrt-sdk-[^"<]*\.tar\.zst' | head -1)
           echo "SDK 文件: $SDK_FILE"
+          if [ -z "$SDK_FILE" ]; then echo "::error::SDK 未找到"; exit 1; fi
           wget -q --timeout=180 --tries=3 -O sdk.tar.zst "$SDK_DIR/$SDK_FILE"
           ls -la sdk.tar.zst
         env:
@@ -110,7 +114,7 @@ jobs:
           ./scripts/feeds update -a 2>&1 | tail -3 || true
           ./scripts/feeds install -a 2>&1 | tail -3 || true
 
-      - name: 编译 APK (USE_APK 后端)
+      - name: 编译 APK (apk 后端)
         run: |
           cd sdk
           echo "CONFIG_USE_APK=y" > .config
@@ -122,7 +126,7 @@ jobs:
           find sdk/bin -name "luci-app-mqtt-manager*" -name "*.apk" -exec cp {} artifact/ \; 2>/dev/null
           find sdk -name "luci-app-mqtt-manager*" -name "*.apk" -exec cp {} artifact/ \; 2>/dev/null
           echo "=== APK 产物 ==="
-          ls -la artifact/
+          ls -la artifact/ || true
 
       - name: 上传产物
         uses: actions/upload-artifact@v4
