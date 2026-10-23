@@ -26,7 +26,18 @@
 <div class="mqtt-card">
     <h3><%:TLS证书状态%></h3>
     <p style="color:#666;"><%:证书目录:%> /etc/mosquitto/cert/</p>
-    <p style="color:#666;"><%:上传文件请命名为:%> cert.pem <%:和%> privkey.pem</p>
+    <p id="tls-status" style="color:#d97706;"><%:加载中...%></p>
+    <div style="margin-top:12px; padding:12px; background:#f9fafb; border-radius:6px;">
+        <p style="margin:0 0 8px;font-size:13px;color:#374151;"><%:上传证书文件（请选择本地 PEM 文件）:%></p>
+        <label style="font-size:13px;color:#374151;"><%:cert.pem%>: </label>
+        <input type="file" id="tls-cert" accept=".pem,.crt,.cer" style="font-size:12px;">
+        <br><br>
+        <label style="font-size:13px;color:#374151;"><%:privkey.pem%>: </label>
+        <input type="file" id="tls-key" accept=".pem,.key" style="font-size:12px;">
+        <br><br>
+        <button class="mqtt-btn mqtt-btn-primary" onclick="uploadTls()"><%:上传证书%></button>
+        <span id="tls-tip" style="margin-left:10px;color:#16a34a;font-size:13px;"></span>
+    </div>
 </div>
 
 <script type="text/javascript">
@@ -70,6 +81,42 @@ function addFwV6() {
         document.getElementById("fw-tip").textContent = d.msg; loadFw();
     });
 }
+function loadTlsStatus() {
+    api("tls_status").then(function(r){return r.json()}).then(function(d){
+        var el = document.getElementById("tls-status");
+        if (d.cert === "present") {
+            el.innerHTML = "✅ <%:证书已存在%>" + (d.expire ? "，<%:到期%>: " + d.expire : "") + "，<%:大小%>: " + (d.certsize||0) + " <%:字节%>";
+            el.style.color = "#16a34a";
+        } else {
+            el.textContent = "⚠️ <%:证书未上传，8883 端口未启用%>";
+            el.style.color = "#d97706";
+        }
+    });
+}
+function uploadTls() {
+    var cert = document.getElementById("tls-cert").files[0];
+    var key = document.getElementById("tls-key").files[0];
+    var tip = document.getElementById("tls-tip");
+    if (!cert && !key) { tip.textContent = "<%:请先选择文件%>"; tip.style.color="#dc2626"; return; }
+    var p = Promise.resolve();
+    if (cert) {
+        p = p.then(function(){
+            return cert.text().then(function(txt){
+                return api("tls_save", {filename:"cert.pem", content:txt}).then(function(r){return r.json()});
+            });
+        });
+    }
+    if (key) {
+        p = p.then(function(){
+            return key.text().then(function(txt){
+                return api("tls_save", {filename:"privkey.pem", content:txt}).then(function(r){return r.json()});
+            });
+        });
+    }
+    p.then(function(){ tip.textContent = "<%:上传完成%>"; tip.style.color="#16a34a"; loadTlsStatus(); })
+     .catch(function(){ tip.textContent = "<%:上传失败%>"; tip.style.color="#dc2626"; });
+}
 loadFw();
+loadTlsStatus();
 </script>
 <%+footer%>

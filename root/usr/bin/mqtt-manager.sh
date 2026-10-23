@@ -92,13 +92,21 @@ case "$ACTION" in
 
     # ---------- inspect ----------
     inspect)
+        # $2=user $3=pass 由前端传入；未传则自动取 passwd 文件第一个用户
+        INSPECT_USER="$2"
+        INSPECT_PASS="$3"
         TIME=$(date "+%Y-%m-%d %H:%M:%S")
-        PASS=$(uci -q get mqtt_manager.@general[0].password 2>/dev/null || echo "")
-        TESTUSER=$(cut -d: -f1 "$PASSWD_FILE" 2>/dev/null | head -1)
+        if [ -z "$INSPECT_USER" ]; then
+            INSPECT_USER=$(cut -d: -f1 "$PASSWD_FILE" 2>/dev/null | head -1)
+        fi
+        if [ -z "$INSPECT_PASS" ]; then
+            INSPECT_PASS=$(uci -q get mqtt_manager.@general[0].password 2>/dev/null || echo "")
+        fi
         LANIP=$(uci -q get network.lan.ipaddr 2>/dev/null || echo "")
 
         echo "===== MQTT Manager 巡检报告 ====="
         echo "时间: $TIME"
+        [ -n "$INSPECT_USER" ] && echo "测试用户: $INSPECT_USER"
         echo ""
         echo "[1] 服务状态:"
         if pidof mosquitto >/dev/null 2>&1; then
@@ -120,19 +128,19 @@ case "$ACTION" in
         ls -l "$PASSWD_FILE" 2>/dev/null
         echo ""
         echo "[6] 本地连通测试:"
-        if command -v mosquitto_pub >/dev/null 2>&1 && [ -n "$PASS" ] && [ -n "$TESTUSER" ]; then
-            mosquitto_pub -h 127.0.0.1 -p 1883 -u "$TESTUSER" -P "$PASS" -t /test/inspect -m "ok" >/dev/null 2>&1
-            [ $? -eq 0 ] && echo " ✅ 本地MQTT发布成功" || echo " ❌ 本地MQTT发布失败"
+        if command -v mosquitto_pub >/dev/null 2>&1 && [ -n "$INSPECT_USER" ] && [ -n "$INSPECT_PASS" ]; then
+            mosquitto_pub -h 127.0.0.1 -p 1883 -u "$INSPECT_USER" -P "$INSPECT_PASS" -t /test/inspect -m "ok" >/dev/null 2>&1
+            [ $? -eq 0 ] && echo " ✅ 本地MQTT发布成功 (user=$INSPECT_USER)" || echo " ❌ 本地MQTT发布失败 (user=$INSPECT_USER)"
         else
-            echo " ⚠️ 缺少 mosquitto-clients 或未配置密码"
+            echo " ⚠️ 缺少 mosquitto-clients 或未提供用户名密码"
         fi
         echo ""
         echo "[7] LAN连通测试:"
-        if command -v mosquitto_pub >/dev/null 2>&1 && [ -n "$LANIP" ] && [ -n "$PASS" ] && [ -n "$TESTUSER" ]; then
-            mosquitto_pub -h "$LANIP" -p 1883 -u "$TESTUSER" -P "$PASS" -t /test/inspect -m "ok" >/dev/null 2>&1
-            [ $? -eq 0 ] && echo " ✅ LAN MQTT发布成功" || echo " ❌ LAN MQTT发布失败"
+        if command -v mosquitto_pub >/dev/null 2>&1 && [ -n "$LANIP" ] && [ -n "$INSPECT_USER" ] && [ -n "$INSPECT_PASS" ]; then
+            mosquitto_pub -h "$LANIP" -p 1883 -u "$INSPECT_USER" -P "$INSPECT_PASS" -t /test/inspect -m "ok" >/dev/null 2>&1
+            [ $? -eq 0 ] && echo " ✅ LAN MQTT发布成功 ($LANIP)" || echo " ❌ LAN MQTT发布失败 ($LANIP)"
         else
-            echo " ⚠️ LAN IP或密码未配置"
+            echo " ⚠️ LAN IP或用户名密码未配置"
         fi
         echo ""
         echo "[8] 防火墙1883检测:"
@@ -154,12 +162,12 @@ case "$ACTION" in
         fi
         echo ""
         echo "[10] 在线客户端统计:"
-        if command -v mosquitto_sub >/dev/null 2>&1 && [ -n "$PASS" ] && [ -n "$TESTUSER" ]; then
-            ONLINE=$(mosquitto_sub -h 127.0.0.1 -p 1883 -u "$TESTUSER" -P "$PASS" -t '$SYS/broker/clients/connected' -C 1 -W 4 2>/dev/null)
+        if command -v mosquitto_sub >/dev/null 2>&1 && [ -n "$INSPECT_USER" ] && [ -n "$INSPECT_PASS" ]; then
+            ONLINE=$(mosquitto_sub -h 127.0.0.1 -p 1883 -u "$INSPECT_USER" -P "$INSPECT_PASS" -t '$SYS/broker/clients/connected' -C 1 -W 4 2>/dev/null)
             ONLINE=$(echo "$ONLINE" | awk '{print int($1)}')
             [ -n "$ONLINE" ] && [ "$ONLINE" -ge 0 ] && echo " ✅ 当前在线客户端: $ONLINE 台" || echo " ⚠️ 获取在线数量超时"
         else
-            echo " ⚠️ 缺少 mosquitto-clients 或未配置密码"
+            echo " ⚠️ 缺少 mosquitto-clients 或未提供用户名密码"
         fi
         echo ""
         echo "[11] 最近连接日志:"
@@ -195,11 +203,25 @@ case "$ACTION" in
 
     # ---------- components ----------
     check_components)
-        for pkg in mosquitto mosquitto-client openssl-util; do
-            if pm_installed "$pkg"; then
-                echo "$pkg|installed"
+        # 输出三段: pkg|status|version
+        for pkg in mosquitto mosquitto-client mosquitto-ssl openssl-utils ca-bundle; do
+            VER=""
+            if command -v apk >/dev/null 2>&1; then
+                if apk list --installed 2>/dev/null | grep -q "^$pkg-"; then
+                    VER=$(apk list --installed 2>/dev/null | grep "^$pkg-" | head -1 | awk '{print $2}')
+                    echo "$pkg|installed|$VER"
+                else
+                    echo "$pkg|not_installed|"
+                fi
+            elif command -v opkg >/dev/null 2>&1; then
+                if opkg list-installed 2>/dev/null | grep -q "^$pkg "; then
+                    VER=$(opkg list-installed 2>/dev/null | grep "^$pkg " | awk '{print $3}')
+                    echo "$pkg|installed|$VER"
+                else
+                    echo "$pkg|not_installed|"
+                fi
             else
-                echo "$pkg|not_installed"
+                echo "$pkg|unknown|"
             fi
         done
         ;;
@@ -208,6 +230,116 @@ case "$ACTION" in
         PKG="$2"
         pm_install "$PKG" &
         echo "正在后台安装 $PKG"
+        ;;
+
+    uninstall_component)
+        PKG="$2"
+        if command -v apk >/dev/null 2>&1; then
+            apk del "$PKG" >/dev/null 2>&1
+        elif command -v opkg >/dev/null 2>&1; then
+            opkg remove "$PKG" >/dev/null 2>&1
+        fi
+        echo "卸载 $PKG 完成"
+        ;;
+
+    # ---------- mosquitto 配置管理（双模式：UCI / 直接文件） ----------
+    # 模式判定：/etc/config/mosquitto 的 owrt 段 use_uci=1 → UCI 模式；use_uci=0 → 直接读 mosquitto.conf
+    get_conf_mode)
+        MODE=$(uci -q get mosquitto.owrt.use_uci 2>/dev/null)
+        if [ "$MODE" = "0" ]; then
+            echo "MODE=file"
+            echo "PATH=/etc/mosquitto/mosquitto.conf"
+        else
+            echo "MODE=uci"
+            echo "PATH=/etc/config/mosquitto"
+        fi
+        ;;
+
+    conf_read)
+        MODE=$(uci -q get mosquitto.owrt.use_uci 2>/dev/null)
+        if [ "$MODE" = "0" ]; then
+            echo "MODE=file"
+            echo "PATH=/etc/mosquitto/mosquitto.conf"
+            echo "---"
+            echo "PORT=$(grep -E '^[[:space:]]*listener' /etc/mosquitto/mosquitto.conf 2>/dev/null | head -1 | awk '{print $2}')"
+            echo "ANON=$(grep -E '^[[:space:]]*allow_anonymous' /etc/mosquitto/mosquitto.conf 2>/dev/null | head -1 | awk '{print $2}')"
+            echo "PASSFILE=$(grep -E '^[[:space:]]*password_file' /etc/mosquitto/mosquitto.conf 2>/dev/null | head -1 | awk '{print $2}')"
+            echo "PERSIST=$(grep -E '^[[:space:]]*persistence ' /etc/mosquitto/mosquitto.conf 2>/dev/null | head -1 | awk '{print $2}')"
+            echo "LOGDEST=$(grep -E '^[[:space:]]*log_dest' /etc/mosquitto/mosquitto.conf 2>/dev/null | head -1 | awk '{print $2, $3}')"
+            echo "---"
+            echo "RAW:"
+            cat /etc/mosquitto/mosquitto.conf 2>/dev/null || echo "(配置文件不存在)"
+        else
+            # UCI 模式：从 /etc/config/mosquitto 读取
+            echo "MODE=uci"
+            echo "PATH=/etc/config/mosquitto"
+            echo "---"
+            echo "PORT=$(uci -q get mosquitto.@mosquitto[0].port 2>/dev/null || echo 1883)"
+            echo "ANON=$(uci -q get mosquitto.@mosquitto[0].allow_anonymous 2>/dev/null || echo 0)"
+            echo "PASSFILE=$(uci -q get mosquitto.@mosquitto[0].password_file 2>/dev/null)"
+            echo "PERSIST=$(uci -q get mosquitto.@persistence[0].persistence 2>/dev/null)"
+            echo "LOGDEST=$(uci -q get mosquitto.@mosquitto[0].log_dest 2>/dev/null)"
+            echo "---"
+            echo "RAW:"
+            cat /etc/config/mosquitto 2>/dev/null || echo "(UCI 配置不存在)"
+        fi
+        ;;
+
+    conf_set)
+        # 双模式写入：conf_set <key> <value>
+        # 若当前 UCI 模式，写入 UCI；否则写入 mosquitto.conf 文件
+        KEY="$2"; VAL="$3"
+        MODE=$(uci -q get mosquitto.owrt.use_uci 2>/dev/null)
+        if [ "$MODE" = "0" ]; then
+            # 文件模式
+            CONF="/etc/mosquitto/mosquitto.conf"
+            [ -f "$CONF" ] || { echo "错误: $CONF 不存在"; exit 1; }
+            if grep -qE "^[[:space:]]*${KEY}([[:space:]]|$)" "$CONF"; then
+                sed -i "s/^\([[:space:]]*${KEY}[[:space:]]*\).*/\1${VAL}/" "$CONF"
+            else
+                echo "${KEY} ${VAL}" >> "$CONF"
+            fi
+            echo "$KEY = $VAL 已写入 $CONF"
+        else
+            # UCI 模式
+            # 转换 mosquitto 用词：persistence 在 persistence 段
+            case "$KEY" in
+                listener) uci set mosquitto.@mosquitto[0].port="${VAL}";;
+                allow_anonymous) uci set mosquitto.@mosquitto[0].allow_anonymous="${VAL}";;
+                password_file) uci set mosquitto.@mosquitto[0].password_file="${VAL}";;
+                persistence) uci set mosquitto.@persistence[0].persistence="${VAL}";;
+                log_dest) uci set mosquitto.@mosquitto[0].log_dest="${VAL}";;
+                autosave_interval) uci set mosquitto.@persistence[0].autosave_interval="${VAL}";;
+                max_connections) uci set mosquitto.@listener[0].max_connections="${VAL}";;
+                *) echo "不支持通过 UCI 设置 $KEY"; exit 1;;
+            esac
+            uci commit mosquitto
+            echo "$KEY = $VAL 已写入 UCI (mosquitto)"
+        fi
+        ;;
+
+    conf_switch)
+        # 切换模式：conf_switch uci|file
+        TARGET="$2"
+        if [ "$TARGET" = "uci" ]; then
+            uci set mosquitto.owrt.use_uci=1
+            uci commit mosquitto
+            echo "已切换到 UCI 模式（配置存 /etc/config/mosquitto）"
+        elif [ "$TARGET" = "file" ]; then
+            # 文件模式必须确保 conf 文件存在
+            [ -f /etc/mosquitto/mosquitto.conf ] || touch /etc/mosquitto/mosquitto.conf
+            uci set mosquitto.owrt.use_uci=0
+            uci commit mosquitto
+            echo "已切换到文件模式（直接管理 /etc/mosquitto/mosquitto.conf）"
+        else
+            echo "用法: conf_switch uci|file"
+        fi
+        ;;
+
+    conf_apply)
+        # 应用并重启 mosquitto
+        /etc/init.d/mosquitto restart >/dev/null 2>&1
+        echo "Mosquitto 已重启（按当前模式加载配置）"
         ;;
 
     # ---------- password ----------
@@ -223,7 +355,51 @@ case "$ACTION" in
         uci -q get mqtt_manager.@general[0].password 2>/dev/null || echo ""
         ;;
 
+    # ---------- TLS 证书 ----------
+    tls_status)
+        mkdir -p "$CERT_DIR"
+        if [ -f "$CERT_DIR/cert.pem" ] && [ -f "$CERT_DIR/privkey.pem" ]; then
+            EXP=""
+            command -v openssl >/dev/null 2>&1 && EXP=$(openssl x509 -in "$CERT_DIR/cert.pem" -noout -enddate 2>/dev/null | cut -d= -f2)
+            echo "CERT=present"
+            [ -n "$EXP" ] && echo "EXPIRE=$EXP"
+            echo "CERTSIZE=$(wc -c < $CERT_DIR/cert.pem 2>/dev/null || echo 0)"
+        else
+            echo "CERT=missing"
+        fi
+        ;;
+
+    tls_save)
+        # tls_save <filename>  —— 从 stdin 读 PEM 内容写到 $CERT_DIR/<filename>
+        FN="$2"
+        case "$FN" in
+            cert.pem|privkey.pem) ;;
+            *) echo "错误: 文件名必须是 cert.pem 或 privkey.pem"; exit 1;;
+        esac
+        mkdir -p "$CERT_DIR"
+        cat > "$CERT_DIR/$FN"
+        chmod 600 "$CERT_DIR/$FN"
+        chown mosquitto:mosquitto "$CERT_DIR/$FN" 2>/dev/null
+        echo "已写入 $CERT_DIR/$FN ($(wc -c < $CERT_DIR/$FN) 字节)"
+        ;;
+
+    # ---------- raw 完整配置保存 ----------
+    conf_raw_save)
+        # $2 = raw 内容（通过参数传入，由 lua 处理）
+        MODE=$(uci -q get mosquitto.owrt.use_uci 2>/dev/null)
+        RAW="$2"
+        if [ -z "$RAW" ]; then echo "错误: 内容为空"; exit 1; fi
+        if [ "$MODE" = "0" ]; then
+            echo "$RAW" > /etc/mosquitto/mosquitto.conf
+            echo "已保存到 /etc/mosquitto/mosquitto.conf"
+        else
+            echo "$RAW" > /etc/config/mosquitto
+            uci commit mosquitto >/dev/null 2>&1
+            echo "已保存到 /etc/config/mosquitto"
+        fi
+        ;;
+
     *)
-        echo "用法: $0 {status|restart|get_config|save_config|list_users|add_user|del_user|inspect|fw_list|fw_add|check_components|install_component|save_password|get_password}"
+        echo "用法: $0 {status|restart|get_conf_mode|conf_read|conf_set|conf_switch|conf_apply|conf_raw_save|get_config|save_config|list_users|add_user|del_user|inspect [user pass]|fw_list|fw_add|check_components|install_component|uninstall_component|tls_status|tls_save|save_password|get_password}"
         ;;
 esac

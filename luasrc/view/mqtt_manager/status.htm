@@ -15,6 +15,12 @@
     <h3><%:服务状态%></h3>
     <p><%:Mosquitto 服务%>: <span id="svc-badge" class="mqtt-status-badge badge-stopped"><%:检测中...%></span></p>
     <p><%:监听端口%>: 1883 (IPv4+IPv6双栈)</p>
+    <div style="margin:10px 0; padding:10px; background:#f9fafb; border-radius:6px;">
+        <label style="font-size:13px;color:#374151;margin-right:8px;"><%:巡检测试账号%>:</label>
+        <input id="inspect-user" placeholder="<%:用户名%>" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;width:140px;">
+        <input id="inspect-pass" type="password" placeholder="<%:密码%>" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;width:140px;margin-left:6px;">
+        <span style="font-size:12px;color:#6b7280;margin-left:6px;"><%:留空则自动取密码文件首个用户%></span>
+    </div>
     <p style="margin-top:12px;">
         <button class="mqtt-btn mqtt-btn-primary" onclick="restartMosq()"><%:重启服务%></button>
         <button class="mqtt-btn mqtt-btn-primary" onclick="runInspect()"><%:一键巡检%></button>
@@ -51,7 +57,9 @@ function restartMosq() {
 function runInspect() {
     var out = document.getElementById("mqtt-output");
     out.textContent = "<%:正在巡检...%>";
-    api("inspect").then(function(r){return r.text()}).then(function(t){ out.textContent = t; })
+    var u = document.getElementById("inspect-user").value;
+    var p = document.getElementById("inspect-pass").value;
+    api("inspect", {user:u, pass:p}).then(function(r){return r.text()}).then(function(t){ out.textContent = t; })
     .catch(function(e){ out.textContent = "<%:巡检失败:%> " + e; });
 }
 function clearOutput() { document.getElementById("mqtt-output").textContent = ""; }

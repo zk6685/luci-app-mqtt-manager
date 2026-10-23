@@ -39,14 +39,22 @@ function loadComp() {
     api("check_components").then(function(r){return r.json()}).then(function(list){
         var tb = document.getElementById("comp-list");
         tb.innerHTML = "";
+        if (!list || list.length === 0) {
+            tb.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#999;"><%:无数据%></td></tr>';
+            return;
+        }
         list.forEach(function(item){
             var tr = document.createElement("tr");
             var status = item.status === "installed"
-                ? '<span class="ok"><%:✅ 已安装%></span>'
-                : '<span class="err"><%:❌ 未安装%></span>';
-            var btn = item.status === "installed"
-                ? '<button class="mqtt-btn mqtt-btn-sm" disabled><%:已安装%></button>'
-                : '<button class="mqtt-btn mqtt-btn-success mqtt-btn-sm" onclick="installPkg(\'' + item.name + '\')"><%:安装%></button>';
+                ? '<span class="ok">✅ <%:已安装%></span>' + (item.version ? ' <span style="color:#6b7280;font-size:12px;">v' + item.version + '</span>' : '')
+                : '<span class="err">❌ <%:未安装%></span>';
+            var btn = "";
+            if (item.status === "installed") {
+                btn = '<button class="mqtt-btn mqtt-btn-primary" onclick="uninstallPkg(\'' + item.name + '\')"><%:卸载%></button>';
+                if (item.name === "mosquitto") btn += ' <span style="color:#dc2626;font-size:12px;">⚠️ <%:卸载将停止Broker%></span>';
+            } else {
+                btn = '<button class="mqtt-btn mqtt-btn-success" onclick="installPkg(\'' + item.name + '\')"><%:安装%></button>';
+            }
             tr.innerHTML = '<td>' + item.name + '</td><td>' + status + '</td><td>' + btn + '</td>';
             tb.appendChild(tr);
         });
@@ -56,7 +64,14 @@ function installPkg(pkg) {
     if (!confirm("<%:确认安装 %>" + pkg + " ?")) return;
     api("install_component", {pkg:pkg}).then(function(r){return r.json()}).then(function(d){
         alert(d.msg);
-        setTimeout(loadComp, 10000);
+        setTimeout(loadComp, 8000);
+    });
+}
+function uninstallPkg(pkg) {
+    if (!confirm("<%:确认卸载 %>" + pkg + " ? <%:该操作会移除该组件%>")) return;
+    api("uninstall_component", {pkg:pkg}).then(function(r){return r.json()}).then(function(d){
+        alert(d.msg);
+        setTimeout(loadComp, 3000);
     });
 }
 loadComp();
