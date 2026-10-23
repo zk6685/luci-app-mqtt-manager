@@ -1,0 +1,33 @@
+{
+	"mqtt-manager": {
+		"description": "MQTT Manager access",
+		"read": {
+			"methods": {
+				"status": {},
+				"exec": {},
+				"inspect": {},
+				"conf_read": {},
+				"fw_list": {},
+				"check_components": {},
+				"tls_status": {},
+				"list_users": {}
+			}
+		},
+		"write": {
+			"methods": {
+				"start": {},
+				"stop": {},
+				"restart": {},
+				"conf_set": {},
+				"conf_apply": {},
+				"conf_raw_save": {},
+				"fw_add": {},
+				"install_component": {},
+				"uninstall_component": {},
+				"tls_save": {},
+				"add_user": {},
+				"del_user": {}
+			}
+		}
+	}
+}
