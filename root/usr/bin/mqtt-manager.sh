@@ -210,6 +210,106 @@ case "$ACTION" in
         echo "正在后台安装 $PKG"
         ;;
 
+    # ---------- mosquitto 配置管理（双模式：UCI / 直接文件） ----------
+    # 模式判定：/etc/config/mosquitto 的 owrt 段 use_uci=1 → UCI 模式；use_uci=0 → 直接读 mosquitto.conf
+    get_conf_mode)
+        MODE=$(uci -q get mosquitto.owrt.use_uci 2>/dev/null)
+        if [ "$MODE" = "0" ]; then
+            echo "MODE=file"
+            echo "PATH=/etc/mosquitto/mosquitto.conf"
+        else
+            echo "MODE=uci"
+            echo "PATH=/etc/config/mosquitto"
+        fi
+        ;;
+
+    conf_read)
+        MODE=$(uci -q get mosquitto.owrt.use_uci 2>/dev/null)
+        if [ "$MODE" = "0" ]; then
+            echo "MODE=file"
+            echo "PATH=/etc/mosquitto/mosquitto.conf"
+            echo "---"
+            echo "PORT=$(grep -E '^[[:space:]]*listener' /etc/mosquitto/mosquitto.conf 2>/dev/null | head -1 | awk '{print $2}')"
+            echo "ANON=$(grep -E '^[[:space:]]*allow_anonymous' /etc/mosquitto/mosquitto.conf 2>/dev/null | head -1 | awk '{print $2}')"
+            echo "PASSFILE=$(grep -E '^[[:space:]]*password_file' /etc/mosquitto/mosquitto.conf 2>/dev/null | head -1 | awk '{print $2}')"
+            echo "PERSIST=$(grep -E '^[[:space:]]*persistence ' /etc/mosquitto/mosquitto.conf 2>/dev/null | head -1 | awk '{print $2}')"
+            echo "LOGDEST=$(grep -E '^[[:space:]]*log_dest' /etc/mosquitto/mosquitto.conf 2>/dev/null | head -1 | awk '{print $2, $3}')"
+            echo "---"
+            echo "RAW:"
+            cat /etc/mosquitto/mosquitto.conf 2>/dev/null || echo "(配置文件不存在)"
+        else
+            # UCI 模式：从 /etc/config/mosquitto 读取
+            echo "MODE=uci"
+            echo "PATH=/etc/config/mosquitto"
+            echo "---"
+            echo "PORT=$(uci -q get mosquitto.@mosquitto[0].port 2>/dev/null || echo 1883)"
+            echo "ANON=$(uci -q get mosquitto.@mosquitto[0].allow_anonymous 2>/dev/null || echo 0)"
+            echo "PASSFILE=$(uci -q get mosquitto.@mosquitto[0].password_file 2>/dev/null)"
+            echo "PERSIST=$(uci -q get mosquitto.@persistence[0].persistence 2>/dev/null)"
+            echo "LOGDEST=$(uci -q get mosquitto.@mosquitto[0].log_dest 2>/dev/null)"
+            echo "---"
+            echo "RAW:"
+            cat /etc/config/mosquitto 2>/dev/null || echo "(UCI 配置不存在)"
+        fi
+        ;;
+
+    conf_set)
+        # 双模式写入：conf_set <key> <value>
+        # 若当前 UCI 模式，写入 UCI；否则写入 mosquitto.conf 文件
+        KEY="$2"; VAL="$3"
+        MODE=$(uci -q get mosquitto.owrt.use_uci 2>/dev/null)
+        if [ "$MODE" = "0" ]; then
+            # 文件模式
+            CONF="/etc/mosquitto/mosquitto.conf"
+            [ -f "$CONF" ] || { echo "错误: $CONF 不存在"; exit 1; }
+            if grep -qE "^[[:space:]]*${KEY}([[:space:]]|$)" "$CONF"; then
+                sed -i "s/^\([[:space:]]*${KEY}[[:space:]]*\).*/\1${VAL}/" "$CONF"
+            else
+                echo "${KEY} ${VAL}" >> "$CONF"
+            fi
+            echo "$KEY = $VAL 已写入 $CONF"
+        else
+            # UCI 模式
+            # 转换 mosquitto 用词：persistence 在 persistence 段
+            case "$KEY" in
+                listener) uci set mosquitto.@mosquitto[0].port="${VAL}";;
+                allow_anonymous) uci set mosquitto.@mosquitto[0].allow_anonymous="${VAL}";;
+                password_file) uci set mosquitto.@mosquitto[0].password_file="${VAL}";;
+                persistence) uci set mosquitto.@persistence[0].persistence="${VAL}";;
+                log_dest) uci set mosquitto.@mosquitto[0].log_dest="${VAL}";;
+                autosave_interval) uci set mosquitto.@persistence[0].autosave_interval="${VAL}";;
+                max_connections) uci set mosquitto.@listener[0].max_connections="${VAL}";;
+                *) echo "不支持通过 UCI 设置 $KEY"; exit 1;;
+            esac
+            uci commit mosquitto
+            echo "$KEY = $VAL 已写入 UCI (mosquitto)"
+        fi
+        ;;
+
+    conf_switch)
+        # 切换模式：conf_switch uci|file
+        TARGET="$2"
+        if [ "$TARGET" = "uci" ]; then
+            uci set mosquitto.owrt.use_uci=1
+            uci commit mosquitto
+            echo "已切换到 UCI 模式（配置存 /etc/config/mosquitto）"
+        elif [ "$TARGET" = "file" ]; then
+            # 文件模式必须确保 conf 文件存在
+            [ -f /etc/mosquitto/mosquitto.conf ] || touch /etc/mosquitto/mosquitto.conf
+            uci set mosquitto.owrt.use_uci=0
+            uci commit mosquitto
+            echo "已切换到文件模式（直接管理 /etc/mosquitto/mosquitto.conf）"
+        else
+            echo "用法: conf_switch uci|file"
+        fi
+        ;;
+
+    conf_apply)
+        # 应用并重启 mosquitto
+        /etc/init.d/mosquitto restart >/dev/null 2>&1
+        echo "Mosquitto 已重启（按当前模式加载配置）"
+        ;;
+
     # ---------- password ----------
     save_password)
         PASS="$2"
@@ -221,6 +321,10 @@ case "$ACTION" in
 
     get_password)
         uci -q get mqtt_manager.@general[0].password 2>/dev/null || echo ""
+        ;;
+
+    *)
+        echo "用法: $0 {status|restart|get_conf_mode|conf_read|conf_set|conf_switch|conf_apply|get_config|save_config|list_users|add_user|del_user|inspect|fw_list|fw_add|check_components|install_component|save_password|get_password}"
         ;;
 
     *)
