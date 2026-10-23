@@ -25,6 +25,10 @@ function index()
         call("api_status"), nil).leaf = true
     entry({"admin", "services", "mqtt_manager", "api", "restart"},
         call("api_restart"), nil).leaf = true
+    entry({"admin", "services", "mqtt_manager", "api", "start"},
+        call("api_start"), nil).leaf = true
+    entry({"admin", "services", "mqtt_manager", "api", "stop"},
+        call("api_stop"), nil).leaf = true
     entry({"admin", "services", "mqtt_manager", "api", "get_config"},
         call("api_get_config"), nil).leaf = true
     entry({"admin", "services", "mqtt_manager", "api", "save_config"},
@@ -84,6 +88,14 @@ end
 
 function api_restart()
     json_out({ msg = run_sh("restart") })
+end
+
+function api_start()
+    json_out({ msg = run_sh("start") })
+end
+
+function api_stop()
+    json_out({ msg = run_sh("stop") })
 end
 
 function api_get_config()

@@ -22,7 +22,9 @@
         <span style="font-size:12px;color:#6b7280;margin-left:6px;"><%:留空则自动取密码文件首个用户%></span>
     </div>
     <p style="margin-top:12px;">
-        <button class="mqtt-btn mqtt-btn-primary" onclick="restartMosq()"><%:重启服务%></button>
+        <button class="mqtt-btn" style="background:#16a34a;color:#fff;" onclick="svcAction('start')"><%:启动%></button>
+        <button class="mqtt-btn" style="background:#dc2626;color:#fff;" onclick="svcAction('stop')"><%:停止%></button>
+        <button class="mqtt-btn mqtt-btn-primary" onclick="svcAction('restart')"><%:重启服务%></button>
         <button class="mqtt-btn mqtt-btn-primary" onclick="runInspect()"><%:一键巡检%></button>
         <button class="mqtt-btn mqtt-btn-primary" onclick="clearOutput()"><%:清空输出%></button>
     </p>
@@ -50,9 +52,21 @@ function loadStatus() {
         else { b.className = "mqtt-status-badge badge-stopped"; b.textContent = "<%:已停止%>"; }
     }).catch(function(){});
 }
-function restartMosq() {
-    if (!confirm("<%:确认重启Mosquitto？%>")) return;
-    api("restart").then(function(){ setTimeout(loadStatus, 3000); });
+function svcAction(act) {
+    var out = document.getElementById("mqtt-output");
+    var label = act === "start" ? "<%:启动%>" : act === "stop" ? "<%:停止%>" : "<%:重启%>";
+    if (act !== "start" && !confirm("<%:确认%>" + label + "<%: Mosquitto？%>")) return;
+    out.textContent = ">>> " + label + "Mosquitto...\n";
+    api(act).then(function(r){return r.json()}).then(function(d){
+        out.textContent += d.msg + "\n";
+        out.textContent += ">>> 刷新状态...\n";
+        setTimeout(loadStatus, 2000);
+        setTimeout(function(){
+            api("status").then(function(r){return r.json()}).then(function(s){
+                out.textContent += s.status === "running" ? "<%:结果: 服务运行中%>\n" : "<%:结果: 服务已停止%>\n";
+            });
+        }, 3000);
+    }).catch(function(e){ out.textContent += "<%:操作失败:%> " + e; });
 }
 function runInspect() {
     var out = document.getElementById("mqtt-output");

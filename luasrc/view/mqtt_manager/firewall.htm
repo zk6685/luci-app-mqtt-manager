@@ -10,6 +10,7 @@
 .mqtt-btn-warning { background:#d97706; color:#fff; }
 .mqtt-btn-primary { background:#2563eb; color:#fff; }
 .mqtt-btn-success { background:#16a34a; color:#fff; }
+#fw-output { background:#111827; color:#34d399; padding:1rem; border-radius:8px; white-space:pre-wrap; font-family:monospace; font-size:12px; min-height:60px; margin-top:10px; }
 </style>
 
 <div class="mqtt-card">
@@ -20,7 +21,7 @@
     </table>
     <button class="mqtt-btn mqtt-btn-warning" onclick="addFwV4()"><%:添加IPv4放行1883%></button>
     <button class="mqtt-btn mqtt-btn-warning" onclick="addFwV6()"><%:添加IPv6放行1883%></button>
-    <span id="fw-tip" style="margin-left:10px;color:#d97706;"></span>
+    <div id="fw-output"></div>
 </div>
 
 <div class="mqtt-card">
@@ -69,16 +70,21 @@ function loadFw() {
         });
     });
 }
+function fwOut(msg) {
+    document.getElementById("fw-output").textContent += msg + "\n";
+}
 function addFwV4() {
     if (!confirm("<%:确认添加WAN口放行TCP 1883 (IPv4)？%>")) return;
+    fwOut(">>> 添加 IPv4 放行 1883 ...");
     api("fw_add", {port:"1883", family:"ipv4"}).then(function(r){return r.json()}).then(function(d){
-        document.getElementById("fw-tip").textContent = d.msg; loadFw();
+        fwOut(d.msg); loadFw();
     });
 }
 function addFwV6() {
     if (!confirm("<%:确认添加WAN口放行TCP 1883 (IPv6)？%>")) return;
+    fwOut(">>> 添加 IPv6 放行 1883 ...");
     api("fw_add", {port:"1883", family:"ipv6"}).then(function(r){return r.json()}).then(function(d){
-        document.getElementById("fw-tip").textContent = d.msg; loadFw();
+        fwOut(d.msg); loadFw();
     });
 }
 function loadTlsStatus() {

@@ -10,6 +10,7 @@
 .mqtt-btn-success { background:#16a34a; color:#fff; }
 .ok { color:#16a34a; font-weight:bold; }
 .err { color:#dc2626; font-weight:bold; }
+#comp-output { background:#111827; color:#34d399; padding:1rem; border-radius:8px; white-space:pre-wrap; font-family:monospace; font-size:12px; min-height:60px; margin-top:10px; }
 </style>
 
 <div class="mqtt-card">
@@ -19,6 +20,7 @@
         <tbody id="comp-list"></tbody>
     </table>
     <p style="color:#666;font-size:13px;"><%:注: 组件安装使用系统包管理器 (apk/opkg)%></p>
+    <div id="comp-output"></div>
 </div>
 
 <script type="text/javascript">
@@ -60,17 +62,22 @@ function loadComp() {
         });
     });
 }
+function compOut(msg) {
+    document.getElementById("comp-output").textContent += msg + "\n";
+}
 function installPkg(pkg) {
     if (!confirm("<%:确认安装 %>" + pkg + " ?")) return;
+    compOut(">>> 开始安装 " + pkg + " ...");
     api("install_component", {pkg:pkg}).then(function(r){return r.json()}).then(function(d){
-        alert(d.msg);
-        setTimeout(loadComp, 8000);
+        compOut(d.msg);
+        setTimeout(loadComp, 5000);
     });
 }
 function uninstallPkg(pkg) {
     if (!confirm("<%:确认卸载 %>" + pkg + " ? <%:该操作会移除该组件%>")) return;
+    compOut(">>> 开始卸载 " + pkg + " ...");
     api("uninstall_component", {pkg:pkg}).then(function(r){return r.json()}).then(function(d){
-        alert(d.msg);
+        compOut(d.msg);
         setTimeout(loadComp, 3000);
     });
 }

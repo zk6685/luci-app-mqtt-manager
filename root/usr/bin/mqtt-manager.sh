@@ -45,6 +45,18 @@ case "$ACTION" in
         echo "重启指令已发送"
         ;;
 
+    start)
+        /etc/init.d/mosquitto start >/dev/null 2>&1
+        sleep 1
+        if pidof mosquitto >/dev/null 2>&1; then echo "Mosquitto 已启动"; else echo "启动失败，请查看日志"; fi
+        ;;
+
+    stop)
+        /etc/init.d/mosquitto stop >/dev/null 2>&1
+        sleep 1
+        if pidof mosquitto >/dev/null 2>&1; then echo "停止失败"; else echo "Mosquitto 已停止"; fi
+        ;;
+
     # ---------- config ----------
     get_config)
         PORT=$(uci -q get mosquitto.@mosquitto[0].port 2>/dev/null || echo "1883")
@@ -176,9 +188,11 @@ case "$ACTION" in
 
     # ---------- firewall ----------
     fw_list)
-        uci show firewall 2>/dev/null | grep -i mqtt | while read line; do
+        # 遍历 firewall 规则段，找 name 含 MQTT 的，再取 dest_port
+        uci show firewall 2>/dev/null | grep -oE 'firewall\.[a-zA-Z0-9_]+\.name=.MQTT[^.]*' | while read line; do
+            sec=$(echo "$line" | cut -d. -f1-2)
             name=$(echo "$line" | grep -o "name='[^']*'" | cut -d"'" -f2)
-            port=$(echo "$line" | grep -o "dest_port='[^']*'" | cut -d"'" -f2)
+            port=$(uci -q get "$sec.dest_port" 2>/dev/null)
             [ -n "$name" ] && [ -n "$port" ] && echo "$name|$port"
         done
         ;;
@@ -228,18 +242,25 @@ case "$ACTION" in
 
     install_component)
         PKG="$2"
-        pm_install "$PKG" &
-        echo "正在后台安装 $PKG"
+        echo ">>> 开始安装 $PKG ..."
+        if command -v apk >/dev/null 2>&1; then
+            apk add "$PKG" 2>&1 | tail -5
+        elif command -v opkg >/dev/null 2>&1; then
+            opkg update >/dev/null 2>&1
+            opkg install "$PKG" 2>&1 | tail -5
+        fi
+        echo ">>> 安装 $PKG 完成"
         ;;
 
     uninstall_component)
         PKG="$2"
+        echo ">>> 开始卸载 $PKG ..."
         if command -v apk >/dev/null 2>&1; then
-            apk del "$PKG" >/dev/null 2>&1
+            apk del "$PKG" 2>&1 | tail -5
         elif command -v opkg >/dev/null 2>&1; then
-            opkg remove "$PKG" >/dev/null 2>&1
+            opkg remove "$PKG" 2>&1 | tail -5
         fi
-        echo "卸载 $PKG 完成"
+        echo ">>> 卸载 $PKG 完成"
         ;;
 
     # ---------- mosquitto 配置管理（双模式：UCI / 直接文件） ----------
@@ -400,6 +421,6 @@ case "$ACTION" in
         ;;
 
     *)
-        echo "用法: $0 {status|restart|get_conf_mode|conf_read|conf_set|conf_switch|conf_apply|conf_raw_save|get_config|save_config|list_users|add_user|del_user|inspect [user pass]|fw_list|fw_add|check_components|install_component|uninstall_component|tls_status|tls_save|save_password|get_password}"
+        echo "用法: $0 {status|start|stop|restart|get_conf_mode|conf_read|conf_set|conf_switch|conf_apply|conf_raw_save|get_config|save_config|list_users|add_user|del_user|inspect [user pass]|fw_list|fw_add|check_components|install_component|uninstall_component|tls_status|tls_save|save_password|get_password}"
         ;;
 esac
