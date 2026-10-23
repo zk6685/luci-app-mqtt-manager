@@ -271,24 +271,42 @@ case "$ACTION" in
     install_component)
         PKG="$2"
         echo ">>> 开始安装 $PKG ..."
+        TMP=$(mktemp)
         if command -v apk >/dev/null 2>&1; then
-            apk add "$PKG" 2>&1 | tail -5
+            apk add "$PKG" >"$TMP" 2>&1; RC=$?
         elif command -v opkg >/dev/null 2>&1; then
             opkg update >/dev/null 2>&1
-            opkg install "$PKG" 2>&1 | tail -5
+            opkg install "$PKG" >"$TMP" 2>&1; RC=$?
+        else
+            echo ">>> 错误: 无 apk/opkg 包管理器"; rm -f "$TMP"; exit 1
         fi
-        echo ">>> 安装 $PKG 完成"
+        tail -8 "$TMP"; rm -f "$TMP"
+        if pm_installed "$PKG"; then
+            echo ">>> ✅ $PKG 安装成功"
+        else
+            echo ">>> ❌ $PKG 安装失败 (退出码 $RC)"
+            exit 1
+        fi
         ;;
 
     uninstall_component)
         PKG="$2"
         echo ">>> 开始卸载 $PKG ..."
+        TMP=$(mktemp)
         if command -v apk >/dev/null 2>&1; then
-            apk del "$PKG" 2>&1 | tail -5
+            apk del "$PKG" >"$TMP" 2>&1; RC=$?
         elif command -v opkg >/dev/null 2>&1; then
-            opkg remove "$PKG" 2>&1 | tail -5
+            opkg remove "$PKG" >"$TMP" 2>&1; RC=$?
+        else
+            echo ">>> 错误: 无 apk/opkg 包管理器"; rm -f "$TMP"; exit 1
         fi
-        echo ">>> 卸载 $PKG 完成"
+        tail -8 "$TMP"; rm -f "$TMP"
+        if pm_installed "$PKG"; then
+            echo ">>> ❌ $PKG 卸载失败 (退出码 $RC)，包仍存在"
+            exit 1
+        else
+            echo ">>> ✅ $PKG 卸载成功"
+        fi
         ;;
 
     # ---------- mosquitto 配置管理（双模式：UCI / 直接文件） ----------
