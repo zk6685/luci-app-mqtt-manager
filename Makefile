@@ -12,8 +12,7 @@ LUCI_MAINTAINER:=zk6685 <zk6685@qq.com>
 
 PKG_LICENSE:=MIT
 
-# 强制 backend 脚本可执行（打包后权限 0755，避免 Permission denied）
-PKG_FILE_PERMISSIONS := /usr/bin/mqtt-manager.sh 0755 root:root
+# 脚本执行位由 git mode 100755 控制（见 root/usr/bin/mqtt-manager.sh）
 
 include $(TOPDIR)/feeds/luci/luci.mk
 
