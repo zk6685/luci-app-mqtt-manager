@@ -8,93 +8,67 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          # ImmortalWrt master (25.12/apk分支) - filogic aarch64 (对应 mt7981b/zk-daepon)
-          - name: immortalwrt-master-filogic
-            repo: "immortalwrt/immortalwrt"
-            branch: "master"
-            target: "mediatek/filogic"
-          # PonWrt master - Airoha AN7581 (zk-daepon 光猫平台)
-          - name: ponwrt-master-an7581
-            repo: "pbs05/ponwrt"
-            branch: "master"
-            target: "airoha/an7581"
+          # ImmortalWrt master SNAPSHOT SDK - filogic (aarch64, 对应 mt7981b/zk-daepon)
+          - name: immortalwrt-master-sdk
+            sdk_dir: "https://downloads.immortalwrt.org/snapshots/targets/mediatek/filogic"
 
     steps:
       - name: 检出插件源码
         uses: actions/checkout@v4
 
-      - name: 安装完整构建依赖
+      - name: 安装 zstd 并下载 master SDK
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q \
-            build-essential ccache ecj fastjar file g++ gawk gettext git \
-            libelf-dev libncurses5-dev libncursesw5-dev zlib1g-dev \
-            libssl-dev libtool-bin libjson-c-dev libpcre2-dev \
-            python3 python3-pip python3-setuptools rsync subversion swig time \
-            unzip wget zstd gzip bzip2 xz-utils make patch diffutils \
-            flex bison autoconf automake cmake curl binutils brotli liblz4-dev \
-            libdeflate-dev libzstd-dev
-
-      - name: 检出源码树 (master/apk分支)
-        run: |
-          git clone --depth 1 -b "$BRANCH" "https://github.com/$REPO.git" openwrt
-          echo "源码树: $REPO @ $BRANCH"
+          sudo apt-get update -q && sudo apt-get install -y -q zstd
+          SDK_FILE=$(curl -s "$SDK_DIR/" | grep -oE 'immortalwrt-sdk-[^"<]*\.tar\.zst' | head -1)
+          echo "SDK 文件: $SDK_FILE"
+          if [ -z "$SDK_FILE" ]; then echo "::error::SDK 未找到"; exit 1; fi
+          wget -q --timeout=180 --tries=3 -O sdk.tar.zst "$SDK_DIR/$SDK_FILE"
+          ls -la sdk.tar.zst
         env:
-          REPO: ${{ matrix.repo }}
-          BRANCH: ${{ matrix.branch }}
+          SDK_DIR: ${{ matrix.sdk_dir }}
+
+      - name: 解压 SDK
+        run: |
+          mkdir -p sdk
+          tar -I zstd -xf sdk.tar.zst -C sdk --strip-components=1
+          echo "SDK 顶层:" && ls sdk/
 
       - name: 拷贝插件到 package
         run: |
-          mkdir -p openwrt/package/luci-app-mqtt-manager
-          cp -r luasrc openwrt/package/luci-app-mqtt-manager/
-          cp -r root openwrt/package/luci-app-mqtt-manager/
-          cp Makefile README.md openwrt/package/luci-app-mqtt-manager/
-          echo "插件内容:" && ls openwrt/package/luci-app-mqtt-manager/
+          mkdir -p sdk/package/luci-app-mqtt-manager
+          cp -r luasrc sdk/package/luci-app-mqtt-manager/
+          cp -r root sdk/package/luci-app-mqtt-manager/
+          cp Makefile README.md sdk/package/luci-app-mqtt-manager/
+          echo "插件内容:" && ls sdk/package/luci-app-mqtt-manager/
 
-      - name: 更新 feeds
+      - name: 更新 feeds (含 luci)
         run: |
-          cd openwrt
+          cd sdk
           ./scripts/feeds update -a 2>&1 | tail -3 || true
           ./scripts/feeds install -a 2>&1 | tail -3 || true
 
-      - name: 配置 (USE_APK 双输出 ipk + apk)
+      - name: 启用 apk 双输出并编译
         run: |
-          cd openwrt
-          TARGET_UPPER=$(echo "$TARGET" | sed 's|/|_|g' | tr 'a-z' 'A-Z')
-          # 同时启用 opkg(ipk) 和 apk 输出
-          echo "CONFIG_TARGET_${TARGET_UPPER}=y" > .config
-          echo "CONFIG_PACKAGE_luci-app-mqtt-manager=y" >> .config
-          echo "CONFIG_USE_APK=y" >> .config
+          cd sdk
+          # 启用 apk 后端（master SDK 支持），同时保留 ipk
+          echo "CONFIG_USE_APK=y" > .config
           echo "CONFIG_PACKAGE_apk=y" >> .config
-          cat .config
-          make defconfig 2>&1 | tail -5
-        env:
-          TARGET: ${{ matrix.target }}
-
-      - name: 配置下载镜像并编译 (输出 ipk + apk)
-        run: |
-          cd openwrt
-          # 给 lua 下载源补充可用镜像，规避 www.lua.org 不可达
-          LUA_MK=package/utils/lua/Makefile
-          if grep -q "tecgraf.puc-rio.br" "$LUA_MK" 2>/dev/null; then
-            sed -i 's|https://www.tecgraf.puc-rio.br/lua/ftp/|https://mirror.nju.edu.cn/lua/ftp/ https://www.tecgraf.puc-rio.br/lua/ftp/|' "$LUA_MK"
-          fi
-          grep -n "PKG_SOURCE_URL" "$LUA_MK" 2>/dev/null | head
-          # 先构建 host 工具链（含 libdeflate-gzip，供解压用），再编包
-          make tools/install 2>&1 | tail -5
-          make package/libs/libdeflate/host/install 2>&1 | tail -10
-          ls -la staging_dir/host/bin/libdeflate-gzip 2>/dev/null || echo "!! libdeflate-gzip 仍未生成"
+          make defconfig 2>&1 | tail -3
+          echo "=== 检查 .config 中 USE_APK 是否生效 ==="
+          grep -E "USE_APK|PACKAGE_apk" .config
           make package/luci-app-mqtt-manager/compile V=s 2>&1 | tee /tmp/build.log | tail -50
 
       - name: 收集 ipk 和 apk 产物
         run: |
           mkdir -p artifact
-          find openwrt/bin -name "luci-app-mqtt-manager*" \( -name "*.ipk" -o -name "*.apk" \) -exec cp {} artifact/ \;
+          find sdk/bin -name "luci-app-mqtt-manager*" \( -name "*.ipk" -o -name "*.apk" \) -exec cp {} artifact/ \;
+          # 也检查 packages 目录
+          find sdk -name "luci-app-mqtt-manager*" \( -name "*.ipk" -o -name "*.apk" \) -exec cp {} artifact/ \; 2>/dev/null
           echo "=== 产物 ==="
           ls -la artifact/
 
