@@ -41,19 +41,47 @@ case "$ACTION" in
         ;;
 
     restart)
-        /etc/init.d/mosquitto restart >/dev/null 2>&1
-        echo "重启指令已发送"
+        /etc/init.d/mosquitto stop >/dev/null 2>&1
+        sleep 1
+        pidof mosquitto >/dev/null 2>&1 && killall -9 mosquitto 2>/dev/null
+        sleep 1
+        /etc/init.d/mosquitto start >/dev/null 2>&1
+        sleep 2
+        if pidof mosquitto >/dev/null 2>&1; then echo "Mosquitto 已重启"; else echo "重启失败，请查看日志"; fi
         ;;
 
     start)
+        # 先清理残留进程，避免 Address in use
+        pidof mosquitto >/dev/null 2>&1 && {
+            echo ">>> 检测到残留 mosquitto 进程，正在清理..."
+            /etc/init.d/mosquitto stop >/dev/null 2>&1
+            sleep 1
+            pidof mosquitto >/dev/null 2>&1 && killall -9 mosquitto 2>/dev/null
+            sleep 1
+        }
+        # 检查 1883 端口是否被占
+        if netstat -tulnp 2>/dev/null | grep -q ":1883 "; then
+            echo ">>> 警告: 1883 端口被占用:"
+            netstat -tulnp 2>/dev/null | grep ":1883 "
+        fi
         /etc/init.d/mosquitto start >/dev/null 2>&1
-        sleep 1
-        if pidof mosquitto >/dev/null 2>&1; then echo "Mosquitto 已启动"; else echo "启动失败，请查看日志"; fi
+        sleep 2
+        if pidof mosquitto >/dev/null 2>&1; then
+            echo "Mosquitto 已启动"
+        else
+            echo "启动失败，最近日志:"
+            logread 2>/dev/null | grep mosquitto | tail -5
+        fi
         ;;
 
     stop)
         /etc/init.d/mosquitto stop >/dev/null 2>&1
         sleep 1
+        if pidof mosquitto >/dev/null 2>&1; then
+            echo ">>> 常规停止无效，强制 kill..."
+            killall -9 mosquitto 2>/dev/null
+            sleep 1
+        fi
         if pidof mosquitto >/dev/null 2>&1; then echo "停止失败"; else echo "Mosquitto 已停止"; fi
         ;;
 
