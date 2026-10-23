@@ -7,6 +7,9 @@ function index()
     entry({"admin", "services", "mqtt_manager", "status"},
         template("mqtt_manager/status"),
         _("状态"), 10)
+    entry({"admin", "services", "mqtt_manager", "config"},
+        template("mqtt_manager/config"),
+        _("基础配置"), 15)
     entry({"admin", "services", "mqtt_manager", "users"},
         template("mqtt_manager/users"),
         _("用户管理"), 20)
@@ -42,6 +45,16 @@ function index()
         call("api_check_components"), nil).leaf = true
     entry({"admin", "services", "mqtt_manager", "api", "install_component"},
         call("api_install_component"), nil).leaf = true
+    entry({"admin", "services", "mqtt_manager", "api", "conf_read"},
+        call("api_conf_read"), nil).leaf = true
+    entry({"admin", "services", "mqtt_manager", "api", "conf_set"},
+        call("api_conf_set"), nil).leaf = true
+    entry({"admin", "services", "mqtt_manager", "api", "conf_apply"},
+        call("api_conf_apply"), nil).leaf = true
+    entry({"admin", "services", "mqtt_manager", "api", "conf_switch"},
+        call("api_conf_switch"), nil).leaf = true
+    entry({"admin", "services", "mqtt_manager", "api", "get_conf_mode"},
+        call("api_get_conf_mode"), nil).leaf = true
 end
 
 local function run_sh(args)
@@ -137,4 +150,59 @@ end
 function api_install_component()
     local pkg = luci.http.formvalue("pkg") or ""
     json_out({ msg = run_sh(string.format("install_component %q", pkg)) })
+end
+
+function api_conf_read()
+    -- 返回配置模式 + 路径 + 关键配置项 + 完整内容
+    local out = run_sh("conf_read")
+    local cfg = { mode = "uci", path = "/etc/config/mosquitto", port = "", anon = "", passfile = "", persist = "", logdest = "", raw = "" }
+    local inraw = false
+    for line in out:gmatch("[^\n]+") do
+        if line == "RAW:" then inraw = true
+        elseif line == "---" then
+        else
+            local k, v = line:match("^([^=]+)=(.*)$")
+            if k == "MODE" then cfg.mode = v
+            elseif k == "PATH" then cfg.path = v
+            elseif k == "PORT" then cfg.port = v
+            elseif k == "ANON" then cfg.anon = v
+            elseif k == "PASSFILE" then cfg.passfile = v
+            elseif k == "PERSIST" then cfg.persist = v
+            elseif k == "LOGDEST" then cfg.logdest = v
+            elseif inraw then cfg.raw = cfg.raw .. line .. "\n"
+            end
+        end
+    end
+    json_out(cfg)
+end
+
+function api_conf_set()
+    local key = luci.http.formvalue("key") or ""
+    local val = luci.http.formvalue("val") or ""
+    if key == "" then json_out({ msg = "参数缺失" }) return end
+    -- 只允许白名单键，防止注入
+    local allowed = { listener = 1, allow_anonymous = 1, password_file = 1, persistence = 1, log_dest = 1,
+                      autosave_interval = 1, max_connections = 1, sys_interval = 1, allow_zero_length_clientid = 1 }
+    if not allowed[key] then json_out({ msg = "不允许修改该配置项: " .. key }) return end
+    json_out({ msg = run_sh(string.format("conf_set %q %q", key, val)) })
+end
+
+function api_conf_apply()
+    json_out({ msg = run_sh("conf_apply") })
+end
+
+function api_conf_switch()
+    local target = luci.http.formvalue("target") or ""
+    if target ~= "uci" and target ~= "file" then json_out({ msg = "参数错误: target 应为 uci 或 file" }) return end
+    json_out({ msg = run_sh(string.format("conf_switch %q", target)) })
+end
+
+function api_get_conf_mode()
+    local out = run_sh("get_conf_mode")
+    local mode = "uci"; local path = "/etc/config/mosquitto"
+    for line in out:gmatch("[^\n]+") do
+        local k, v = line:match("^([^=]+)=(.*)$")
+        if k == "MODE" then mode = v elseif k == "PATH" then path = v end
+    end
+    json_out({ mode = mode, path = path })
 end
