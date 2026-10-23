@@ -143,9 +143,9 @@ case "$ACTION" in
         NEWUSER="$2"; NEWPASS="$3"
         [ -z "$NEWUSER" ] || [ -z "$NEWPASS" ] && { echo "错误: 用户名密码不能为空"; exit 1; }
         touch "$PASSWD_FILE"
-        # mosquitto 2.0.x 要求 password_file 属主为 root:root
+        # mosquitto 2.0.x 要求 password_file 属主为 root:root，且 mosquitto 用户需可读
         chown root:root "$PASSWD_FILE" 2>/dev/null
-        chmod 600 "$PASSWD_FILE"
+        chmod 644 "$PASSWD_FILE"
         if ! command -v mosquitto_passwd >/dev/null 2>&1; then
             echo "错误: mosquitto_passwd 命令不存在，请先安装 mosquitto-ssl 组件"
             exit 1
@@ -159,7 +159,7 @@ case "$ACTION" in
             exit 1
         fi
         chown root:root "$PASSWD_FILE" 2>/dev/null
-        chmod 600 "$PASSWD_FILE"
+        chmod 644 "$PASSWD_FILE"
         echo "用户 $NEWUSER 添加成功"
         ;;
 
