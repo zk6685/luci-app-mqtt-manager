@@ -45,9 +45,22 @@ case "$ACTION" in
         sleep 1
         pidof mosquitto >/dev/null 2>&1 && killall -9 mosquitto 2>/dev/null
         sleep 1
+        # 清理重复 listener
+        MAIN_PORT=$(uci -q get mosquitto.@mosquitto[0].port 2>/dev/null)
+        if [ -n "$MAIN_PORT" ]; then
+            for sec in $(uci show mosquitto 2>/dev/null | grep -oE 'mosquitto\.[a-zA-Z0-9_]+=listener' | cut -d= -f1); do
+                LP=$(uci -q get "$sec.port" 2>/dev/null)
+                if [ "$LP" = "$MAIN_PORT" ]; then
+                    echo ">>> 检测到重复 listener 段 ($sec port=$LP)，已删除"
+                    uci delete "$sec"
+                    uci commit mosquitto
+                fi
+            done
+        fi
+        rm -f /tmp/mosquitto.generated.conf
         /etc/init.d/mosquitto start >/dev/null 2>&1
         sleep 2
-        if pidof mosquitto >/dev/null 2>&1; then echo "Mosquitto 已重启"; else echo "重启失败，请查看日志"; fi
+        if pidof mosquitto >/dev/null 2>&1; then echo "Mosquitto 已重启"; else echo "重启失败"; logread 2>/dev/null | grep mosquitto | tail -5; fi
         ;;
 
     start)
@@ -59,18 +72,31 @@ case "$ACTION" in
             pidof mosquitto >/dev/null 2>&1 && killall -9 mosquitto 2>/dev/null
             sleep 1
         }
-        # 检查 1883 端口是否被占
-        if netstat -tulnp 2>/dev/null | grep -q ":1883 "; then
-            echo ">>> 警告: 1883 端口被占用:"
-            netstat -tulnp 2>/dev/null | grep ":1883 "
+        # 清理重复 listener 配置（Address in use 根因：生成conf里有两条 listener 1883）
+        MAIN_PORT=$(uci -q get mosquitto.@mosquitto[0].port 2>/dev/null)
+        if [ -n "$MAIN_PORT" ]; then
+            # 主段有 port 设置，检查是否还有额外 listener 段监听同端口
+            for sec in $(uci show mosquitto 2>/dev/null | grep -oE 'mosquitto\.[a-zA-Z0-9_]+=listener' | cut -d= -f1); do
+                LP=$(uci -q get "$sec.port" 2>/dev/null)
+                if [ "$LP" = "$MAIN_PORT" ]; then
+                    echo ">>> 检测到重复 listener 段 ($sec port=$LP)，已删除以避免 Address in use"
+                    uci delete "$sec"
+                    uci commit mosquitto
+                fi
+            done
         fi
+        # 删除旧生成配置，强制 init 脚本重新生成
+        rm -f /tmp/mosquitto.generated.conf
+        # 启动
         /etc/init.d/mosquitto start >/dev/null 2>&1
         sleep 2
         if pidof mosquitto >/dev/null 2>&1; then
             echo "Mosquitto 已启动"
         else
             echo "启动失败，最近日志:"
-            logread 2>/dev/null | grep mosquitto | tail -5
+            logread 2>/dev/null | grep mosquitto | tail -8
+            echo "--- 生成配置内容 ---"
+            cat /tmp/mosquitto.generated.conf 2>/dev/null || echo "(无)"
         fi
         ;;
 
