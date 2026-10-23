@@ -8,6 +8,7 @@
 .badge-stopped { background:#fee2e2; color:#dc2626; }
 .mqtt-btn { padding:6px 16px; border:none; border-radius:6px; cursor:pointer; font-size:14px; }
 .mqtt-btn-primary { background:#2563eb; color:#fff; }
+.mqtt-btn-warning { background:#d97706; color:#fff; }
 #mqtt-output { background:#111827; color:#34d399; padding:1rem; border-radius:8px; white-space:pre-wrap; font-family:monospace; font-size:13px; min-height:200px; margin-top:10px; }
 </style>
 
@@ -17,7 +18,7 @@
     <p><%:监听端口%>: 1883 (IPv4+IPv6双栈)</p>
     <div style="margin:10px 0; padding:10px; background:#f9fafb; border-radius:6px;">
         <label style="font-size:13px;color:#374151;margin-right:8px;"><%:巡检测试账号%>:</label>
-        <input id="inspect-user" placeholder="<%:用户名%>" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;width:140px;">
+        <input id="inspect-user" value="zk6685" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;width:140px;">
         <input id="inspect-pass" type="password" placeholder="<%:密码%>" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;width:140px;margin-left:6px;">
         <span style="font-size:12px;color:#6b7280;margin-left:6px;"><%:留空则自动取密码文件首个用户%></span>
     </div>
@@ -26,6 +27,8 @@
         <button class="mqtt-btn" style="background:#dc2626;color:#fff;" onclick="svcAction('stop')"><%:停止%></button>
         <button class="mqtt-btn mqtt-btn-primary" onclick="svcAction('restart')"><%:重启服务%></button>
         <button class="mqtt-btn mqtt-btn-primary" onclick="runInspect()"><%:一键巡检%></button>
+        <button class="mqtt-btn mqtt-btn-warning" onclick="fwAdd('ipv4')"><%:防火墙放行IPv4%></button>
+        <button class="mqtt-btn mqtt-btn-warning" onclick="fwAdd('ipv6')"><%:防火墙放行IPv6%></button>
         <button class="mqtt-btn mqtt-btn-primary" onclick="clearOutput()"><%:清空输出%></button>
     </p>
     <div id="mqtt-output"></div>
@@ -45,6 +48,9 @@ function api(action, data) {
         headers: token ? {"X-Luci-Token": token} : {}
     });
 }
+function outAppend(msg) {
+    document.getElementById("mqtt-output").textContent += msg + "\n";
+}
 function loadStatus() {
     api("status").then(function(r){return r.json()}).then(function(d){
         var b = document.getElementById("svc-badge");
@@ -58,15 +64,15 @@ function svcAction(act) {
     if (act !== "start" && !confirm("<%:确认%>" + label + "<%: Mosquitto？%>")) return;
     out.textContent = ">>> " + label + "Mosquitto...\n";
     api(act).then(function(r){return r.json()}).then(function(d){
-        out.textContent += d.msg + "\n";
-        out.textContent += ">>> 刷新状态...\n";
+        outAppend(d.msg);
+        outAppend(">>> 刷新状态...");
         setTimeout(loadStatus, 2000);
         setTimeout(function(){
             api("status").then(function(r){return r.json()}).then(function(s){
-                out.textContent += s.status === "running" ? "<%:结果: 服务运行中%>\n" : "<%:结果: 服务已停止%>\n";
+                outAppend(s.status === "running" ? "<%:结果: 服务运行中%>" : "<%:结果: 服务已停止%>");
             });
         }, 3000);
-    }).catch(function(e){ out.textContent += "<%:操作失败:%> " + e; });
+    }).catch(function(e){ outAppend("<%:操作失败:%> " + e); });
 }
 function runInspect() {
     var out = document.getElementById("mqtt-output");
@@ -75,6 +81,14 @@ function runInspect() {
     var p = document.getElementById("inspect-pass").value;
     api("inspect", {user:u, pass:p}).then(function(r){return r.text()}).then(function(t){ out.textContent = t; })
     .catch(function(e){ out.textContent = "<%:巡检失败:%> " + e; });
+}
+function fwAdd(family) {
+    var label = family === "ipv4" ? "IPv4" : "IPv6";
+    if (!confirm("<%:确认添加WAN口放行TCP 1883 (%1)？%>".replace("%1", label))) return;
+    outAppend(">>> 添加防火墙 " + label + " 放行 1883 ...");
+    api("fw_add", {port:"1883", family:family}).then(function(r){return r.json()}).then(function(d){
+        outAppend(d.msg);
+    });
 }
 function clearOutput() { document.getElementById("mqtt-output").textContent = ""; }
 loadStatus();

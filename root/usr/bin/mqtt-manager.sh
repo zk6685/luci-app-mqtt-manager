@@ -337,6 +337,11 @@ case "$ACTION" in
         TMP=$(mktemp)
         if command -v apk >/dev/null 2>&1; then
             apk del "$PKG" >"$TMP" 2>&1; RC=$?
+            # 如果因依赖关系没删掉，加 --force 重试
+            if pm_installed "$PKG"; then
+                echo ">>> 常规卸载未生效，使用 --force 重试..."
+                apk del "$PKG" --force >"$TMP" 2>&1; RC=$?
+            fi
         elif command -v opkg >/dev/null 2>&1; then
             opkg remove "$PKG" >"$TMP" 2>&1; RC=$?
         else
@@ -344,7 +349,7 @@ case "$ACTION" in
         fi
         tail -8 "$TMP"; rm -f "$TMP"
         if pm_installed "$PKG"; then
-            echo ">>> ❌ $PKG 卸载失败 (退出码 $RC)，包仍存在"
+            echo ">>> ❌ $PKG 卸载失败 (退出码 $RC)，包仍存在（可能被其他包依赖）"
             exit 1
         else
             echo ">>> ✅ $PKG 卸载成功"
