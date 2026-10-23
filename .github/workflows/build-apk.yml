@@ -52,24 +52,28 @@ jobs:
           ./scripts/feeds update -a 2>&1 | tail -3 || true
           ./scripts/feeds install -a 2>&1 | tail -3 || true
 
-      - name: 启用 apk 双输出并编译
+      - name: 编译 IPK (默认 ipkg 输出)
         run: |
           cd sdk
-          # 启用 apk 后端（master SDK 支持），同时保留 ipk
-          echo "CONFIG_USE_APK=y" > .config
+          make defconfig 2>&1 | tail -3
+          make package/luci-app-mqtt-manager/compile V=s 2>&1 | tee /tmp/build_ipk.log | tail -20
+          mkdir -p artifact
+          find sdk/bin -name "luci-app-mqtt-manager*" -name "*.ipk" -exec cp {} artifact/ \; 2>/dev/null
+          find sdk -name "luci-app-mqtt-manager*" -name "*.ipk" -exec cp {} artifact/ \; 2>/dev/null
+          echo "=== 已有 ipk ==="
+          ls -la artifact/ 2>/dev/null
+
+      - name: 编译 APK (启用 USE_APK 输出)
+        run: |
+          cd sdk
+          echo "CONFIG_USE_APK=y" >> .config
           echo "CONFIG_PACKAGE_apk=y" >> .config
           make defconfig 2>&1 | tail -3
-          echo "=== 检查 .config 中 USE_APK 是否生效 ==="
-          grep -E "USE_APK|PACKAGE_apk" .config
-          make package/luci-app-mqtt-manager/compile V=s 2>&1 | tee /tmp/build.log | tail -50
-
-      - name: 收集 ipk 和 apk 产物
-        run: |
-          mkdir -p artifact
-          find sdk/bin -name "luci-app-mqtt-manager*" \( -name "*.ipk" -o -name "*.apk" \) -exec cp {} artifact/ \;
-          # 也检查 packages 目录
-          find sdk -name "luci-app-mqtt-manager*" \( -name "*.ipk" -o -name "*.apk" \) -exec cp {} artifact/ \; 2>/dev/null
-          echo "=== 产物 ==="
+          grep -E "USE_APK" .config
+          make package/luci-app-mqtt-manager/compile V=s 2>&1 | tee /tmp/build_apk.log | tail -20
+          find sdk/bin -name "luci-app-mqtt-manager*" -name "*.apk" -exec cp {} artifact/ \; 2>/dev/null
+          find sdk -name "luci-app-mqtt-manager*" -name "*.apk" -exec cp {} artifact/ \; 2>/dev/null
+          echo "=== 全部产物 ==="
           ls -la artifact/
 
       - name: 上传产物
