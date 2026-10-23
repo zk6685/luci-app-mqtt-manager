@@ -58,7 +58,7 @@ jobs:
       - name: 拷贝插件到 package
         run: |
           mkdir -p sdk/package/luci-app-mqtt-manager
-          cp -r luasrc sdk/package/luci-app-mqtt-manager/
+          cp -r htdocs sdk/package/luci-app-mqtt-manager/
           cp -r root sdk/package/luci-app-mqtt-manager/
           cp Makefile README.md sdk/package/luci-app-mqtt-manager/
           echo "插件内容:" && ls sdk/package/luci-app-mqtt-manager/
