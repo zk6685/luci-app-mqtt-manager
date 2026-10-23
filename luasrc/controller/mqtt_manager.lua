@@ -13,9 +13,6 @@ function index()
     entry({"admin", "services", "mqtt_manager", "users"},
         template("mqtt_manager/users"),
         _("用户管理"), 20)
-    entry({"admin", "services", "mqtt_manager", "firewall"},
-        template("mqtt_manager/firewall"),
-        _("防火墙 & TLS"), 30)
     entry({"admin", "services", "mqtt_manager", "components"},
         template("mqtt_manager/components"),
         _("组件管理"), 40)
