@@ -183,6 +183,8 @@ case "$ACTION" in
             INSPECT_PASS=$(uci -q get mqtt_manager.@general[0].password 2>/dev/null || echo "")
         fi
         LANIP=$(uci -q get network.lan.ipaddr 2>/dev/null || echo "")
+        # 去掉 CIDR 后缀（如 192.168.2.1/24 → 192.168.2.1）
+        LANIP=${LANIP%/*}
 
         echo "===== MQTT Manager 巡检报告 ====="
         echo "时间: $TIME"
