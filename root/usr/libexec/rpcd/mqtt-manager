@@ -22,7 +22,7 @@ fi
 json_get_var args args
 
 # Parse args JSON array ("[\"status\",\"zk6685\"]") into positional params.
-set -- ""
+set --
 if [ -n "$args" ] && [ "$args" != "null" ]; then
 	json_init
 	json_load "$args"
