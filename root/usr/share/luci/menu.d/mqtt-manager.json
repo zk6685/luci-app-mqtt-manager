@@ -6,39 +6,39 @@
 			"type": "firstchild"
 		},
 		"depends": {
-			"acl": ["mqtt-manager"]
+			"acl": [ "mqtt-manager" ]
 		}
 	},
 	"admin/services/mqtt-manager/status": {
 		"title": "状态",
 		"order": 10,
-		"view": "mqtt-manager/status",
-		"depends": {
-			"acl": ["mqtt-manager"]
+		"action": {
+			"type": "view",
+			"path": "mqtt-manager/status"
 		}
 	},
 	"admin/services/mqtt-manager/config": {
 		"title": "基础配置",
-		"order": 15,
-		"view": "mqtt-manager/config",
-		"depends": {
-			"acl": ["mqtt-manager"]
+		"order": 20,
+		"action": {
+			"type": "view",
+			"path": "mqtt-manager/config"
 		}
 	},
 	"admin/services/mqtt-manager/users": {
 		"title": "用户管理",
-		"order": 20,
-		"view": "mqtt-manager/users",
-		"depends": {
-			"acl": ["mqtt-manager"]
+		"order": 30,
+		"action": {
+			"type": "view",
+			"path": "mqtt-manager/users"
 		}
 	},
 	"admin/services/mqtt-manager/components": {
 		"title": "组件管理",
 		"order": 40,
-		"view": "mqtt-manager/components",
-		"depends": {
-			"acl": ["mqtt-manager"]
+		"action": {
+			"type": "view",
+			"path": "mqtt-manager/components"
 		}
 	}
 }
