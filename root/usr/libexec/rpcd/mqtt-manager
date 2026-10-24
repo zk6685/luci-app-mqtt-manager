@@ -1,49 +1,42 @@
 #!/bin/sh
 # rpcd JSON-RPC wrapper for mqtt-manager
-# Receives JSON-RPC requests, calls mqtt-manager.sh, returns JSON
+# Receives JSON-RPC request on stdin, dispatches to mqtt-manager.sh, returns JSON.
+# JS side: rpc.declare({object:'mqtt-manager', method:'exec', params:['args']})
+#   callRpc('["status"]')  -> rpcd receives params { args: '["status"]' }
 
-. /usr/share/libubox/jshn.sh 2>/dev/null
+. /usr/share/libubox/jshn.sh
 
-read INPUT
+INPUT=$(cat)
 
 json_init
 json_load "$INPUT"
 json_get_var method method
-json_get_var params params
 
-# Parse params - it's a JSON string array like ["status","arg1","arg2"]
-# We need to extract each element
-case "$method" in
-    list)
-        # rpcd capability discovery
-        echo '{"status":{"call":true},"exec":{"call":true},"inspect":{"call":true},"conf_read":{"call":true},"conf_set":{"call":true},"conf_apply":{"call":true},"conf_raw_save":{"call":true},"fw_list":{"call":true},"fw_add":{"call":true},"check_components":{"call":true},"install_component":{"call":true},"uninstall_component":{"call":true},"tls_status":{"call":true},"tls_save":{"call":true},"list_users":{"call":true},"add_user":{"call":true},"del_user":{"call":true},"start":{"call":true},"stop":{"call":true},"restart":{"call":true}}'
-        exit 0
-        ;;
-esac
-
-# Extract params as space-separated args
-# params is JSON array: ["arg1","arg2",...]
-# Use jshn to parse
-ARGS=""
-if [ -n "$params" ] && [ "$params" != "null" ]; then
-    json_select params
-    # Try to iterate over array
-    i=0
-    while true; do
-        json_get_var val "$i" 2>/dev/null
-        if [ -z "$val" ]; then
-            break
-        fi
-        ARGS="$ARGS '$val'"
-        i=$((i+1))
-    done
+# rpcd capability discovery: expose the single 'exec' method
+if [ "$method" = "list" ]; then
+	echo '{"exec":{"call":true}}'
+	exit 0
 fi
 
-# Call the shell script
-OUTPUT=$(/usr/bin/mqtt-manager.sh $method $ARGS 2>&1)
+# method is always 'exec' from JS. Real command lives in args JSON array.
+json_get_var args args
+
+# Parse args JSON array ("[\"status\",\"zk6685\"]") into positional params.
+set -- ""
+if [ -n "$args" ] && [ "$args" != "null" ]; then
+	json_init
+	json_load "$args"
+	i=1
+	while json_get_var v "$i"; do
+		set -- "$@" "$v"
+		i=$((i+1))
+	done
+fi
+
+# $1 = command name, rest = its arguments
+OUTPUT=$(/usr/bin/mqtt-manager.sh "$@" 2>&1)
 RC=$?
 
-# Return as JSON string
-# Escape newlines and quotes
-ESCAPED=$(echo "$OUTPUT" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' '\n' | sed ':a;N;$!ba;s/\n/\\n/g')
+# JSON-encode output (escape backslash, quote; newlines -> \n)
+ESCAPED=$(printf '%s' "$OUTPUT" | sed 's/\\/\\\\/g; s/"/\\"/g' | awk '{ printf "%s\\n", $0 }')
 echo "{\"result\":\"$ESCAPED\",\"code\":$RC}"

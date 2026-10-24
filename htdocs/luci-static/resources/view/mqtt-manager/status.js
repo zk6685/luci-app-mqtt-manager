@@ -12,7 +12,9 @@ var callRpc = rpc.declare({
 });
 
 function sh(args) {
-    return callRpc(JSON.stringify(args));
+    return callRpc(JSON.stringify(args)).then(function(res) {
+        return (res && res.result !== undefined) ? res.result : '';
+    });
 }
 
 return view.extend({

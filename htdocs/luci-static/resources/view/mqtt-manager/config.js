@@ -10,7 +10,11 @@ var callRpc = rpc.declare({
     params: ['args']
 });
 
-function sh(args) { return callRpc(JSON.stringify(args)); }
+function sh(args) {
+    return callRpc(JSON.stringify(args)).then(function(res) {
+        return (res && res.result !== undefined) ? res.result : '';
+    });
+}
 
 return view.extend({
     load: function() {
