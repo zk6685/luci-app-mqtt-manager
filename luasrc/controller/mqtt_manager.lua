@@ -136,8 +136,10 @@ end
 function api_inspect()
     local user = luci.http.formvalue("user") or ""
     local pass = luci.http.formvalue("pass") or ""
+    local host = luci.http.formvalue("host") or ""
+    local port = luci.http.formvalue("port") or ""
     luci.http.prepare_content("text/plain; charset=utf-8")
-    luci.http.write(run_sh(string.format("inspect %q %q", user, pass)))
+    luci.http.write(run_sh(string.format("inspect %q %q %q %q", user, pass, host, port)))
 end
 
 function api_fw_list()

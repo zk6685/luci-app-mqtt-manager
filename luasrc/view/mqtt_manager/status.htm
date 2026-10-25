@@ -18,9 +18,14 @@
     <p><%:监听端口%>: 1883 (IPv4+IPv6双栈)</p>
     <div style="margin:10px 0; padding:10px; background:#f9fafb; border-radius:6px;">
         <label style="font-size:13px;color:#374151;margin-right:8px;"><%:巡检测试账号%>:</label>
-        <input id="inspect-user" value="zk6685" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;width:140px;">
-        <input id="inspect-pass" type="password" placeholder="<%:密码%>" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;width:140px;margin-left:6px;">
+        <input id="inspect-user" value="zk6685" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;width:120px;">
+        <input id="inspect-pass" type="password" placeholder="<%:密码%>" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;width:120px;margin-left:6px;">
         <span style="font-size:12px;color:#6b7280;margin-left:6px;"><%:留空则自动取密码文件首个用户%></span>
+        <br>
+        <label style="font-size:13px;color:#374151;margin-right:8px;display:inline-block;margin-top:8px;"><%:外网域名%>:</label>
+        <input id="inspect-host" placeholder="<%:如 zk6685.top%>" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;width:160px;">
+        <input id="inspect-port" placeholder="<%:端口 默认1883%>" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;width:80px;margin-left:6px;">
+        <span style="font-size:12px;color:#6b7280;margin-left:6px;"><%:填写则测试外网连通，留空跳过%></span>
     </div>
     <p style="margin-top:12px;">
         <button class="mqtt-btn" style="background:#16a34a;color:#fff;" onclick="svcAction('start')"><%:启动%></button>
@@ -79,7 +84,9 @@ function runInspect() {
     out.textContent = "<%:正在巡检...%>";
     var u = document.getElementById("inspect-user").value;
     var p = document.getElementById("inspect-pass").value;
-    api("inspect", {user:u, pass:p}).then(function(r){return r.text()}).then(function(t){ out.textContent = t; })
+    var h = document.getElementById("inspect-host").value;
+    var pt = document.getElementById("inspect-port").value;
+    api("inspect", {user:u, pass:p, host:h, port:pt}).then(function(r){return r.text()}).then(function(t){ out.textContent = t; })
     .catch(function(e){ out.textContent = "<%:巡检失败:%> " + e; });
 }
 function fwAdd(family) {

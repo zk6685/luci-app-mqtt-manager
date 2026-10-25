@@ -45,6 +45,10 @@ case "$ACTION" in
         sleep 1
         pidof mosquitto >/dev/null 2>&1 && killall -9 mosquitto 2>/dev/null
         sleep 1
+        # 兜底: 强制走 UCI 生成配置，并确保 password_file 存在(否则所有用户认证失败/crash loop)
+        uci set mosquitto.owrt.use_uci='1' 2>/dev/null
+        [ -z "$(uci -q get mosquitto.mosquitto.password_file)" ] && uci set mosquitto.mosquitto.password_file="$PASSWD_FILE"
+        uci commit mosquitto 2>/dev/null
         # 清理重复 listener
         MAIN_PORT=$(uci -q get mosquitto.@mosquitto[0].port 2>/dev/null)
         if [ -n "$MAIN_PORT" ]; then
@@ -72,6 +76,10 @@ case "$ACTION" in
             pidof mosquitto >/dev/null 2>&1 && killall -9 mosquitto 2>/dev/null
             sleep 1
         }
+        # 兜底: 强制走 UCI 生成配置，并确保 password_file 存在(否则所有用户认证失败/crash loop)
+        uci set mosquitto.owrt.use_uci='1' 2>/dev/null
+        [ -z "$(uci -q get mosquitto.mosquitto.password_file)" ] && uci set mosquitto.mosquitto.password_file="$PASSWD_FILE"
+        uci commit mosquitto 2>/dev/null
         # 清理重复 listener 配置（Address in use 根因：生成conf里有两条 listener 1883）
         MAIN_PORT=$(uci -q get mosquitto.@mosquitto[0].port 2>/dev/null)
         if [ -n "$MAIN_PORT" ]; then
@@ -172,9 +180,11 @@ case "$ACTION" in
 
     # ---------- inspect ----------
     inspect)
-        # $2=user $3=pass 由前端传入；未传则自动取 passwd 文件第一个用户
+        # $2=user $3=pass $4=域名 $5=端口 由前端传入；user/pass 未传则自动取 passwd 文件第一个用户
         INSPECT_USER="$2"
         INSPECT_PASS="$3"
+        EXT_HOST="$4"     # 外网域名，用户自定义；留空则不测
+        EXT_PORT="$5"     # 外网端口，默认 1883
         TIME=$(date "+%Y-%m-%d %H:%M:%S")
         if [ -z "$INSPECT_USER" ]; then
             INSPECT_USER=$(cut -d: -f1 "$PASSWD_FILE" 2>/dev/null | head -1)
@@ -185,6 +195,8 @@ case "$ACTION" in
         LANIP=$(uci -q get network.lan.ipaddr 2>/dev/null || echo "")
         # 去掉 CIDR 后缀（如 192.168.2.1/24 → 192.168.2.1）
         LANIP=${LANIP%/*}
+        # 外网端口默认 1883
+        [ -z "$EXT_PORT" ] && EXT_PORT=1883
 
         echo "===== MQTT Manager 巡检报告 ====="
         echo "时间: $TIME"
@@ -225,13 +237,25 @@ case "$ACTION" in
             echo " ⚠️ LAN IP或用户名密码未配置"
         fi
         echo ""
-        echo "[8] 防火墙1883检测:"
+        echo "[8] 外网域名连通测试:"
+        if [ -n "$EXT_HOST" ]; then
+            if command -v mosquitto_pub >/dev/null 2>&1 && [ -n "$INSPECT_USER" ] && [ -n "$INSPECT_PASS" ]; then
+                mosquitto_pub -h "$EXT_HOST" -p "$EXT_PORT" -u "$INSPECT_USER" -P "$INSPECT_PASS" -t /test/inspect -m "ok" >/dev/null 2>&1
+                [ $? -eq 0 ] && echo " ✅ 外网域名 MQTT 发布成功 ($EXT_HOST:$EXT_PORT)" || echo " ❌ 外网域名 MQTT 发布失败 ($EXT_HOST:$EXT_PORT)"
+            else
+                echo " ⚠️ 缺少 mosquitto-clients 或未提供用户名密码"
+            fi
+        else
+            echo " ⚪ 未配置外网域名，跳过测试"
+        fi
+        echo ""
+        echo "[9] 防火墙1883检测:"
         FW_V4=$(uci show firewall 2>/dev/null | grep -i "name='MQTT-1883'" | grep -v IPv6 | wc -l)
         FW_V6=$(uci show firewall 2>/dev/null | grep -i "name='MQTT-1883-IPv6'" | wc -l)
         [ "$FW_V4" -gt 0 ] && echo " ✅ IPv4防火墙已放行1883" || echo " ⚠️ IPv4防火墙未放行1883"
         [ "$FW_V6" -gt 0 ] && echo " ✅ IPv6防火墙已放行1883" || echo " ⚠️ IPv6防火墙未放行1883"
         echo ""
-        echo "[9] TLS证书检测:"
+        echo "[10] TLS证书检测:"
         if [ -f "$CERT_DIR/cert.pem" ] && [ -f "$CERT_DIR/privkey.pem" ]; then
             if command -v openssl >/dev/null 2>&1; then
                 CERT_EXP=$(openssl x509 -in "$CERT_DIR/cert.pem" -noout -enddate 2>/dev/null | cut -d= -f2)
@@ -243,7 +267,7 @@ case "$ACTION" in
             echo " ⚠️ TLS证书不存在，8883未启用"
         fi
         echo ""
-        echo "[10] 在线客户端统计:"
+        echo "[11] 在线客户端统计:"
         if command -v mosquitto_sub >/dev/null 2>&1 && [ -n "$INSPECT_USER" ] && [ -n "$INSPECT_PASS" ]; then
             ONLINE=$(mosquitto_sub -h 127.0.0.1 -p 1883 -u "$INSPECT_USER" -P "$INSPECT_PASS" -t '$SYS/broker/clients/connected' -C 1 -W 4 2>/dev/null)
             ONLINE=$(echo "$ONLINE" | awk '{print int($1)}')
@@ -252,7 +276,7 @@ case "$ACTION" in
             echo " ⚠️ 缺少 mosquitto-clients 或未提供用户名密码"
         fi
         echo ""
-        echo "[11] 最近连接日志:"
+        echo "[12] 最近连接日志:"
         logread 2>/dev/null | grep -i mosquitto | tail -10
         ;;
 
