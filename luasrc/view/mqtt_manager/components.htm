@@ -31,6 +31,8 @@ function getToken() {
 function api(action, data) {
     var fd = new FormData();
     if (data) for (var k in data) fd.append(k, data[k]);
+    // 空表单会导致 LuCI ucode 解析边界报错 500，补一个占位字段
+    fd.append("_x", "1");
     var token = getToken();
     return fetch("/cgi-bin/luci/admin/services/mqtt_manager/api/" + action, {
         method: "POST", body: fd, credentials: "same-origin",
