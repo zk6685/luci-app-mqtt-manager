@@ -52,6 +52,8 @@ function index()
         call("api_conf_set"), nil).leaf = true
     entry({"admin", "services", "mqtt_manager", "api", "conf_apply"},
         call("api_conf_apply"), nil).leaf = true
+    entry({"admin", "services", "mqtt_manager", "api", "conf_check"},
+        call("api_conf_check"), nil).leaf = true
     entry({"admin", "services", "mqtt_manager", "api", "conf_switch"},
         call("api_conf_switch"), nil).leaf = true
     entry({"admin", "services", "mqtt_manager", "api", "get_conf_mode"},
@@ -210,6 +212,12 @@ end
 
 function api_conf_apply()
     json_out({ msg = run_sh("conf_apply") })
+end
+
+function api_conf_check()
+    local fix = luci.http.formvalue("fix") or ""
+    luci.http.prepare_content("text/plain; charset=utf-8")
+    luci.http.write(run_sh("conf_check" .. (fix == "1" and " fix" or "")))
 end
 
 function api_conf_switch()

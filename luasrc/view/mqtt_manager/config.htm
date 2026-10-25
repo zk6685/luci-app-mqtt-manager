@@ -31,7 +31,12 @@
     </div>
     <div class="mqtt-row">
         <button class="mqtt-btn mqtt-btn-primary" onclick="loadConfig()"><%:读取配置%></button>
+        <button class="mqtt-btn mqtt-btn-primary" onclick="runConfCheck()"><%:检测配置完整性%></button>
+        <button class="mqtt-btn" style="background:#d97706;color:#fff;" onclick="runConfFix()"><%:一键修复%></button>
         <span id="tip" style="margin-left:10px;color:#16a34a;font-size:13px;"></span>
+    </div>
+    <div class="mqtt-row">
+        <div id="conf-check-out" style="width:100%;"></div>
     </div>
 </div>
 
@@ -107,8 +112,26 @@ function setTip(t, color) {
     el.textContent = t;
     el.style.color = color || "#16a34a";
 }
-function loadConfig() {
-    api("conf_read").then(function(r){return r.json()}).then(function(d){
+function runConfCheck() {
+    var el = document.getElementById("conf-check-out");
+    el.textContent = "<%:正在检查...%>";
+    api("conf_check", {}).then(function(r){return r.text()}).then(function(t){ el.textContent = t; })
+    .catch(function(e){ el.textContent = "<%:检查失败:%> " + e; el.style.color="#dc2626"; });
+}
+function runConfFix() {
+    if (!confirm("<%:确认自动修复所有配置问题？将强制 use_uci=1、设置 password_file、修复属主权限、删除重复 listener。%>")) return;
+    var el = document.getElementById("conf-check-out");
+    el.textContent = "<%:正在修复...%>";
+    api("conf_check", {fix:"1"}).then(function(r){return r.text()}).then(function(t){
+        el.textContent = t;
+        el.textContent += "\n<%:修复完成，刷新状态...%>";
+        setTimeout(loadStatusIfExists, 1500);
+    }).catch(function(e){ el.textContent = "<%:修复失败:%> " + e; el.style.color="#dc2626"; });
+}
+function loadStatusIfExists() {
+    // 状态页徽标不受影响；此处仅提示可去状态页查看
+}
+function loadConfig() {    api("conf_read").then(function(r){return r.json()}).then(function(d){
         if (!d) return;
         var modeSel = document.getElementById("conf-mode");
         if (d.mode) { modeSel.value = d.mode; document.getElementById("mode-tip").textContent = d.mode === "uci" ? "<%:通过 UCI 管理，系统自动生成 conf%>" : "<%:直接读写 mosquitto.conf%>"; }

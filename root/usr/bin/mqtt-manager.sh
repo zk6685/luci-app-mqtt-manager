@@ -480,6 +480,101 @@ case "$ACTION" in
         echo "Mosquitto 已重启（按当前模式加载配置）"
         ;;
 
+    conf_check)
+        # 配置完整性检测与修复：conf_check [fix]
+        # fix 参数存在时自动修复所有问题；否则只报告
+        DO_FIX="$2"
+        PASSWD_FILE="/etc/mosquitto/passwd"
+
+        echo "===== Mosquitto 配置完整性检查 ====="
+        echo "时间: $(date "+%Y-%m-%d %H:%M:%S")"
+
+        # --- 1. use_uci 模式 ---
+        MODE=$(uci -q get mosquitto.owrt.use_uci 2>/dev/null)
+        if [ "$MODE" = "0" ]; then
+            echo "[1] 配置模式: ❌ use_uci=0 (文件模式，易出问题)"
+            echo "    - 当前读 /etc/mosquitto/mosquitto.conf，不受 UCI 管控"
+            if [ "$DO_FIX" = "fix" ]; then
+                uci set mosquitto.owrt.use_uci=1; uci commit mosquitto
+                echo "    - ✅ 已修复: 强制 use_uci=1 (切回 UCI 模式)"
+            fi
+        else
+            echo "[1] 配置模式: ✅ use_uci=1 (UCI 模式)"
+        fi
+
+        # --- 2. mosquitto 主段 ---
+        if uci -q get mosquitto.@mosquitto[0].port >/dev/null 2>&1; then
+            PORT=$(uci -q get mosquitto.@mosquitto[0].port 2>/dev/null)
+            echo "[2] 监听端口: ✅ $PORT"
+        else
+            echo "[2] 监听端口: ❌ mosquitto 主段缺失或未设置 port"
+            if [ "$DO_FIX" = "fix" ]; then
+                uci set mosquitto.@mosquitto[0].port=1883 2>/dev/null
+                uci set mosquitto.@mosquitto[0].allow_anonymous=0 2>/dev/null
+                uci commit mosquitto 2>/dev/null
+                echo "    - ✅ 已修复: 设置默认 port=1883, allow_anonymous=0"
+            fi
+        fi
+
+        # --- 3. password_file ---
+        PF=$(uci -q get mosquitto.@mosquitto[0].password_file 2>/dev/null)
+        if [ -n "$PF" ]; then
+            echo "[3] password_file: ✅ $PF"
+        else
+            echo "[3] password_file: ❌ 未设置 (所有用户将认证失败)"
+            if [ "$DO_FIX" = "fix" ]; then
+                uci set mosquitto.@mosquitto[0].password_file="$PASSWD_FILE"
+                uci commit mosquitto
+                echo "    - ✅ 已修复: password_file=$PASSWD_FILE"
+            fi
+        fi
+
+        # --- 4. passwd 文件本身 ---
+        if [ -f "$PASSWD_FILE" ]; then
+            OWNER=$(stat -c '%U:%G' "$PASSWD_FILE" 2>/dev/null || ls -l "$PASSWD_FILE" | awk '{print $3":"$4}')
+            PERM=$(stat -c '%a' "$PASSWD_FILE" 2>/dev/null)
+            echo "[4] 密码文件: ✅ 存在 ($PASSWD_FILE, 属主 $OWNER, 权限 $PERM)"
+            if [ "$OWNER" != "root:root" ]; then
+                echo "    - ⚠️ 属主应为 root:root (mosquitto 2.0.x 要求)"
+                [ "$DO_FIX" = "fix" ] && { chown root:root "$PASSWD_FILE"; chmod 644 "$PASSWD_FILE"; echo "    - ✅ 已修复属主/权限"; }
+            elif [ "$PERM" != "644" ]; then
+                echo "    - ⚠️ 权限应为 644 (mosquitto 用户需可读)"
+                [ "$DO_FIX" = "fix" ] && { chmod 644 "$PASSWD_FILE"; echo "    - ✅ 已修复权限 644"; }
+            fi
+        else
+            echo "[4] 密码文件: ❌ $PASSWD_FILE 不存在"
+            if [ "$DO_FIX" = "fix" ]; then
+                touch "$PASSWD_FILE"; chown root:root "$PASSWD_FILE"; chmod 644 "$PASSWD_FILE"
+                echo "    - ✅ 已创建空密码文件 (root:root, 644)"
+            fi
+        fi
+
+        # --- 5. 重复 listener 段 (Address in use 根因) ---
+        MAIN_PORT=$(uci -q get mosquitto.@mosquitto[0].port 2>/dev/null)
+        DUP=0
+        if [ -n "$MAIN_PORT" ]; then
+            for sec in $(uci show mosquitto 2>/dev/null | grep -oE 'mosquitto\.[a-zA-Z0-9_]+=listener' | cut -d= -f1); do
+                LP=$(uci -q get "$sec.port" 2>/dev/null)
+                if [ "$LP" = "$MAIN_PORT" ]; then
+                    echo "[5] 重复 listener: ❌ $sec 监听 $LP 与主段重复 (将导致 Address in use)"
+                    DUP=1
+                    [ "$DO_FIX" = "fix" ] && { uci delete "$sec"; uci commit mosquitto; echo "    - ✅ 已删除多余 listener 段 $sec"; }
+                fi
+            done
+        fi
+        [ "$DUP" = "0" ] && echo "[5] 重复 listener: ✅ 无重复段"
+
+        # --- 6. 服务运行状态 ---
+        if pidof mosquitto >/dev/null 2>&1; then
+            echo "[6] 服务状态: ✅ 运行中 (PID $(pidof mosquitto))"
+        else
+            echo "[6] 服务状态: ❌ 未运行"
+        fi
+
+        echo ""
+        echo "===== 检查完成 ====="
+        ;;
+
     # ---------- password ----------
     save_password)
         PASS="$2"
@@ -538,6 +633,6 @@ case "$ACTION" in
         ;;
 
     *)
-        echo "用法: $0 {status|start|stop|restart|get_conf_mode|conf_read|conf_set|conf_switch|conf_apply|conf_raw_save|get_config|save_config|list_users|add_user|del_user|inspect [user pass]|fw_list|fw_add|check_components|install_component|uninstall_component|tls_status|tls_save|save_password|get_password}"
+        echo "用法: $0 {status|start|stop|restart|get_conf_mode|conf_read|conf_set|conf_switch|conf_apply|conf_check [fix]|conf_raw_save|get_config|save_config|list_users|add_user|del_user|inspect [user pass host port]|fw_list|fw_add|check_components|install_component|uninstall_component|tls_status|tls_save|save_password|get_password}"
         ;;
 esac
