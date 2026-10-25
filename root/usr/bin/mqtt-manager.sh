@@ -578,7 +578,7 @@ case "$ACTION" in
     # ---------- password ----------
     save_password)
         PASS="$2"
-        uci get mqtt_manager.@general[0] >/dev/null 2>&1 || uci add mqtt_manager general
+        uci -q get mqtt_manager.@general[0] >/dev/null 2>&1 || uci add mqtt_manager general
         uci set mqtt_manager.@general[0].password="${PASS}"
         uci commit mqtt_manager
         echo "密码已保存"
@@ -591,7 +591,7 @@ case "$ACTION" in
     save_inspect)
         # 保存巡检自定义信息: save_inspect <user> <pass> <host> <port>
         IUSER="$2"; IPASS="$3"; IHOST="$4"; IPORT="$5"
-        uci get mqtt_manager.@general[0] >/dev/null 2>&1 || uci add mqtt_manager general
+        uci -q get mqtt_manager.@general[0] >/dev/null 2>&1 || uci add mqtt_manager general
         [ -n "$IUSER" ] && uci set mqtt_manager.@general[0].user="${IUSER}"
         [ -n "$IPASS" ] && uci set mqtt_manager.@general[0].password="${IPASS}"
         [ -n "$IHOST" ] && uci set mqtt_manager.@general[0].host="${IHOST}"
