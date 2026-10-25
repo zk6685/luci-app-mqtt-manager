@@ -54,6 +54,10 @@ function index()
         call("api_conf_apply"), nil).leaf = true
     entry({"admin", "services", "mqtt_manager", "api", "conf_check"},
         call("api_conf_check"), nil).leaf = true
+    entry({"admin", "services", "mqtt_manager", "api", "save_inspect"},
+        call("api_save_inspect"), nil).leaf = true
+    entry({"admin", "services", "mqtt_manager", "api", "get_inspect"},
+        call("api_get_inspect"), nil).leaf = true
     entry({"admin", "services", "mqtt_manager", "api", "conf_switch"},
         call("api_conf_switch"), nil).leaf = true
     entry({"admin", "services", "mqtt_manager", "api", "get_conf_mode"},
@@ -218,6 +222,29 @@ function api_conf_check()
     local fix = luci.http.formvalue("fix") or ""
     luci.http.prepare_content("text/plain; charset=utf-8")
     luci.http.write(run_sh("conf_check" .. (fix == "1" and " fix" or "")))
+end
+
+function api_save_inspect()
+    local user = luci.http.formvalue("user") or ""
+    local pass = luci.http.formvalue("pass") or ""
+    local host = luci.http.formvalue("host") or ""
+    local port = luci.http.formvalue("port") or ""
+    json_out({ msg = run_sh(string.format("save_inspect %q %q %q %q", user, pass, host, port)) })
+end
+
+function api_get_inspect()
+    local out = run_sh("get_inspect")
+    local cfg = { user = "", pass = "", host = "", port = "" }
+    for line in out:gmatch("[^\n]+") do
+        local k, v = line:match("^([^=]+)=(.*)$")
+        if k then
+            if k == "USER" then cfg.user = v
+            elseif k == "PASS" then cfg.pass = v
+            elseif k == "HOST" then cfg.host = v
+            elseif k == "PORT" then cfg.port = v end
+        end
+    end
+    json_out(cfg)
 end
 
 function api_conf_switch()

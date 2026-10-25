@@ -32,6 +32,7 @@
         <button class="mqtt-btn" style="background:#dc2626;color:#fff;" onclick="svcAction('stop')"><%:停止%></button>
         <button class="mqtt-btn mqtt-btn-primary" onclick="svcAction('restart')"><%:重启服务%></button>
         <button class="mqtt-btn mqtt-btn-primary" onclick="runInspect()"><%:一键巡检%></button>
+        <button class="mqtt-btn mqtt-btn-warning" onclick="saveInspect()"><%:保存巡检信息%></button>
         <button class="mqtt-btn mqtt-btn-warning" onclick="fwAdd('ipv4')"><%:防火墙放行IPv4%></button>
         <button class="mqtt-btn mqtt-btn-warning" onclick="fwAdd('ipv6')"><%:防火墙放行IPv6%></button>
         <button class="mqtt-btn mqtt-btn-primary" onclick="clearOutput()"><%:清空输出%></button>
@@ -100,6 +101,25 @@ function fwAdd(family) {
     });
 }
 function clearOutput() { document.getElementById("mqtt-output").textContent = ""; }
+function saveInspect() {
+    var u = document.getElementById("inspect-user").value;
+    var p = document.getElementById("inspect-pass").value;
+    var h = document.getElementById("inspect-host").value;
+    var pt = document.getElementById("inspect-port").value;
+    api("save_inspect", {user:u, pass:p, host:h, port:pt}).then(function(r){return r.json()}).then(function(d){
+        outAppend(">>> " + (d.msg || "<%:已保存%>"));
+    }).catch(function(e){ outAppend("<%:保存失败:%> " + e); });
+}
+function loadInspectSaved() {
+    api("get_inspect").then(function(r){return r.json()}).then(function(d){
+        if (!d) return;
+        if (d.user) document.getElementById("inspect-user").value = d.user;
+        if (d.pass) document.getElementById("inspect-pass").value = d.pass;
+        if (d.host) document.getElementById("inspect-host").value = d.host;
+        if (d.port) document.getElementById("inspect-port").value = d.port;
+    }).catch(function(){});
+}
 loadStatus();
+loadInspectSaved();
 </script>
 <%+footer%>

@@ -588,6 +588,26 @@ case "$ACTION" in
         uci -q get mqtt_manager.@general[0].password 2>/dev/null || echo ""
         ;;
 
+    save_inspect)
+        # 保存巡检自定义信息: save_inspect <user> <pass> <host> <port>
+        IUSER="$2"; IPASS="$3"; IHOST="$4"; IPORT="$5"
+        uci get mqtt_manager.@general[0] >/dev/null 2>&1 || uci add mqtt_manager general
+        [ -n "$IUSER" ] && uci set mqtt_manager.@general[0].user="${IUSER}"
+        [ -n "$IPASS" ] && uci set mqtt_manager.@general[0].password="${IPASS}"
+        [ -n "$IHOST" ] && uci set mqtt_manager.@general[0].host="${IHOST}"
+        [ -n "$IPORT" ] && uci set mqtt_manager.@general[0].port="${IPORT}"
+        uci commit mqtt_manager
+        echo "巡检信息已保存"
+        ;;
+
+    get_inspect)
+        # 输出 user pass host port 一行一个
+        echo "USER=$(uci -q get mqtt_manager.@general[0].user 2>/dev/null)"
+        echo "PASS=$(uci -q get mqtt_manager.@general[0].password 2>/dev/null)"
+        echo "HOST=$(uci -q get mqtt_manager.@general[0].host 2>/dev/null)"
+        echo "PORT=$(uci -q get mqtt_manager.@general[0].port 2>/dev/null)"
+        ;;
+
     # ---------- TLS 证书 ----------
     tls_status)
         mkdir -p "$CERT_DIR"
@@ -633,6 +653,6 @@ case "$ACTION" in
         ;;
 
     *)
-        echo "用法: $0 {status|start|stop|restart|get_conf_mode|conf_read|conf_set|conf_switch|conf_apply|conf_check [fix]|conf_raw_save|get_config|save_config|list_users|add_user|del_user|inspect [user pass host port]|fw_list|fw_add|check_components|install_component|uninstall_component|tls_status|tls_save|save_password|get_password}"
+        echo "用法: $0 {status|start|stop|restart|get_conf_mode|conf_read|conf_set|conf_switch|conf_apply|conf_check [fix]|conf_raw_save|get_config|save_config|list_users|add_user|del_user|inspect [user pass host port]|save_inspect [user pass host port]|get_inspect|fw_list|fw_add|check_components|install_component|uninstall_component|tls_status|tls_save|save_password|get_password}"
         ;;
 esac
