@@ -578,9 +578,14 @@ case "$ACTION" in
     # ---------- password ----------
     save_password)
         PASS="$2"
-        uci -q get mqtt_manager.@general[0] >/dev/null 2>&1 || uci add mqtt_manager general
-        uci set mqtt_manager.@general[0].password="${PASS}"
-        uci commit mqtt_manager
+        # 确保配置文件和 general 段存在（幂等）
+        [ -f /etc/config/mqtt_manager ] || touch /etc/config/mqtt_manager
+        if ! uci -q get mqtt_manager.@general[0] >/dev/null 2>&1; then
+            uci -q add mqtt_manager general >/dev/null 2>&1
+            uci -q commit mqtt_manager >/dev/null 2>&1
+        fi
+        uci -q set mqtt_manager.@general[0].password="${PASS}" 2>/dev/null
+        uci -q commit mqtt_manager >/dev/null 2>&1
         echo "密码已保存"
         ;;
 
@@ -591,13 +596,24 @@ case "$ACTION" in
     save_inspect)
         # 保存巡检自定义信息: save_inspect <user> <pass> <host> <port>
         IUSER="$2"; IPASS="$3"; IHOST="$4"; IPORT="$5"
-        uci -q get mqtt_manager.@general[0] >/dev/null 2>&1 || uci add mqtt_manager general
-        [ -n "$IUSER" ] && uci set mqtt_manager.@general[0].user="${IUSER}"
-        [ -n "$IPASS" ] && uci set mqtt_manager.@general[0].password="${IPASS}"
-        [ -n "$IHOST" ] && uci set mqtt_manager.@general[0].host="${IHOST}"
-        [ -n "$IPORT" ] && uci set mqtt_manager.@general[0].port="${IPORT}"
-        uci commit mqtt_manager
-        echo "巡检信息已保存"
+        # 确保配置文件和 general 段存在（幂等）
+        [ -f /etc/config/mqtt_manager ] || touch /etc/config/mqtt_manager
+        if ! uci -q get mqtt_manager.@general[0] >/dev/null 2>&1; then
+            uci -q add mqtt_manager general >/dev/null 2>&1
+            uci -q commit mqtt_manager >/dev/null 2>&1
+        fi
+        [ -n "$IUSER" ] && uci -q set mqtt_manager.@general[0].user="${IUSER}" 2>/dev/null
+        [ -n "$IPASS" ] && uci -q set mqtt_manager.@general[0].password="${IPASS}" 2>/dev/null
+        [ -n "$IHOST" ] && uci -q set mqtt_manager.@general[0].host="${IHOST}" 2>/dev/null
+        [ -n "$IPORT" ] && uci -q set mqtt_manager.@general[0].port="${IPORT}" 2>/dev/null
+        uci -q commit mqtt_manager >/dev/null 2>&1
+        # 回读校验，确认真正写入
+        CHK=$(uci -q get mqtt_manager.@general[0].user 2>/dev/null)
+        if [ -n "$CHK" ]; then
+            echo "巡检信息已保存"
+        else
+            echo "巡检信息保存失败，请检查 /etc/config/mqtt_manager 写入权限"
+        fi
         ;;
 
     get_inspect)
