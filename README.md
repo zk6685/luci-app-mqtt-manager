@@ -6,6 +6,16 @@ LuCI 面板插件，用于在 **OpenWrt / ImmortalWrt / PonWrt** 上一站式管
 
 ---
 
+## 界面预览
+
+| 状态页（一键巡检） | 基础配置（完整性检测） |
+|---|---|
+| ![状态页](docs/screenshots/status.png) | ![基础配置](docs/screenshots/config.png) |
+| **用户管理** | **组件管理** |
+| ![用户管理](docs/screenshots/users.png) | ![组件管理](docs/screenshots/components.png) |
+
+---
+
 ## 页面总览
 
 插件分四个页签：**状态** / **基础配置** / **用户管理** / **组件管理**。
