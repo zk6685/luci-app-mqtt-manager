@@ -93,6 +93,24 @@
     </div>
 </div>
 
+<div class="mqtt-card">
+    <h3><%:配置备份 / 恢复%></h3>
+    <p style="color:#666;font-size:13px;"><%:备份包含:%> mosquitto 配置、巡检信息、用户密码文件、TLS 证书。</p>
+    <div class="mqtt-row" style="margin-top:10px;">
+        <button class="mqtt-btn mqtt-btn-primary" onclick="doBackup()"><%:导出配置备份%></button>
+        <span id="backup-tip" style="margin-left:10px;color:#16a34a;font-size:13px;"></span>
+    </div>
+    <div class="mqtt-row" style="margin-top:10px; align-items:flex-start;">
+        <label style="width:130px;padding-top:6px;"><%:恢复备份文件%>:</label>
+        <div>
+            <input type="file" id="restore-file" accept=".tar.gz,.tgz" style="font-size:12px;padding:4px 8px;">
+            <br><br>
+            <button class="mqtt-btn" style="background:#d97706;color:#fff;" onclick="doRestore()"><%:导入并恢复%></button>
+            <div id="restore-tip" style="margin-top:8px;font-size:13px;color:#374151;"></div>
+        </div>
+    </div>
+</div>
+
 <script type="text/javascript">
 function getToken() {
     var m = document.cookie.match(/luci_token=([0-9a-f]+)/);
@@ -201,6 +219,44 @@ function loadTlsStatus() {
             el.style.color = "#d97706";
         }
     });
+}
+function doBackup() {
+    var tip = document.getElementById("backup-tip");
+    tip.textContent = "<%:正在生成...%>"; tip.style.color = "#16a34a";
+    var token = getToken();
+    fetch("/cgi-bin/luci/admin/services/mqtt_manager/api/backup", {
+        method: "POST",
+        headers: token ? {"X-Luci-Token": token} : {}
+    }).then(function(r){
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.blob();
+    }).then(function(blob){
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "mqtt-manager-backup.tar.gz";
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 200);
+        tip.textContent = "<%:已导出备份文件%>";
+    }).catch(function(e){ tip.textContent = "<%:导出失败:%> " + e; tip.style.color = "#dc2626"; });
+}
+function doRestore() {
+    var file = document.getElementById("restore-file").files[0];
+    var tip = document.getElementById("restore-tip");
+    if (!file) { tip.textContent = "<%:请先选择备份文件%>"; tip.style.color = "#dc2626"; return; }
+    if (!confirm("<%:确认恢复该备份？将覆盖当前 mosquitto 配置、巡检信息、用户密码与 TLS 证书，并重启服务。%>")) return;
+    tip.textContent = "<%:正在上传恢复...%>"; tip.style.color = "#374151";
+    var rd = new FileReader();
+    rd.onload = function(){
+        var b64 = rd.result.split(",")[1];
+        api("restore", {b64:b64}).then(function(r){return r.json()}).then(function(d){
+            tip.textContent = d.msg || "<%:恢复完成%>";
+            tip.style.color = d.msg && d.msg.indexOf("<%:成功%>") >= 0 ? "#16a34a" : (d.msg && d.msg.indexOf("成功") >= 0 ? "#16a34a" : "#d97706");
+            setTimeout(loadConfig, 1500);
+        }).catch(function(e){ tip.textContent = "<%:恢复失败:%> " + e; tip.style.color = "#dc2626"; });
+    };
+    rd.onerror = function(){ tip.textContent = "<%:读取文件失败%>"; tip.style.color = "#dc2626"; };
+    rd.readAsDataURL(file);
 }
 function uploadTls() {
     var cert = document.getElementById("tls-cert").files[0];

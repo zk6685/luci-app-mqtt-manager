@@ -70,6 +70,10 @@ function index()
         call("api_tls_save"), nil).leaf = true
     entry({"admin", "services", "mqtt_manager", "api", "uninstall_component"},
         call("api_uninstall_component"), nil).leaf = true
+    entry({"admin", "services", "mqtt_manager", "api", "backup"},
+        call("api_backup"), nil).leaf = true
+    entry({"admin", "services", "mqtt_manager", "api", "restore"},
+        call("api_restore"), nil).leaf = true
 end
 
 local function run_sh(args)
@@ -299,4 +303,43 @@ end
 function api_uninstall_component()
     local pkg = luci.http.formvalue("pkg") or ""
     json_out({ msg = run_sh(string.format("uninstall_component %q", pkg)) })
+end
+
+function api_backup()
+    -- 导出全部配置为 tar.gz，浏览器直接下载
+    local fd = io.popen("/usr/bin/mqtt-manager.sh backup 2>/dev/null")
+    if not fd then return end
+    luci.http.prepare_content("application/gzip")
+    luci.http.header("Content-Disposition", "attachment; filename=mqtt-manager-backup-" .. os.date("%Y%m%d-%H%M%S") .. ".tar.gz")
+    while true do
+        local chunk = fd:read(8192)
+        if not chunk then break end
+        luci.http.write(chunk)
+    end
+    fd:close()
+end
+
+function api_restore()
+    -- 接收前端上传的 base64 编码 tar.gz 并恢复配置
+    local b64 = luci.http.formvalue("b64") or ""
+    if b64 == "" then
+        json_out({ msg = "错误: 未收到备份文件" })
+        return
+    end
+    -- 写 base64 到临时文件，由 shell 解码后恢复
+    local tmp = "/tmp/mqtt-manager-restore.b64"
+    local f = io.open(tmp, "w")
+    if not f then
+        json_out({ msg = "错误: 无法写入临时文件" })
+        return
+    end
+    f:write(b64)
+    f:close()
+    local cmd = "cat " .. tmp .. " | base64 -d > /tmp/mqtt-manager-restore.tar.gz && /usr/bin/mqtt-manager.sh restore < /tmp/mqtt-manager-restore.tar.gz 2>&1"
+    local fd = io.popen(cmd)
+    local out = fd and fd:read("*a") or "错误: 无法执行恢复"
+    if fd then fd:close() end
+    os.remove(tmp)
+    os.remove("/tmp/mqtt-manager-restore.tar.gz")
+    json_out({ msg = out })
 end

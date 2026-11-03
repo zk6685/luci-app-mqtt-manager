@@ -668,7 +668,77 @@ case "$ACTION" in
         fi
         ;;
 
+    # ---------- 配置备份/恢复 ----------
+    backup)
+        # 导出全部配置为 tar.gz 到 stdout（二进制，前端应下载保存）
+        # 内容: mosquitto UCI / mqtt_manager UCI / passwd / TLS 证书
+        BK="/tmp/mqtt_manager_backup.$$"
+        mkdir -p "$BK/etc/config" "$BK/etc/mosquitto"
+        # 1. UCI 配置
+        uci -q show mosquitto > "$BK/etc/config/mosquitto" 2>/dev/null || true
+        uci -q show mqtt_manager > "$BK/etc/config/mqtt_manager" 2>/dev/null || true
+        # 2. passwd 密码文件
+        [ -f "$PASSWD_FILE" ] && cp "$PASSWD_FILE" "$BK/etc/mosquitto/passwd"
+        # 3. TLS 证书
+        [ -d "$CERT_DIR" ] && cp -r "$CERT_DIR" "$BK/etc/mosquitto/cert" 2>/dev/null
+        # 打 tar.gz 输出到 stdout
+        tar czf - -C "$BK" etc 2>/dev/null
+        rm -rf "$BK"
+        ;;
+
+    restore)
+        # 从 stdin 读取 tar.gz 并恢复配置: restore
+        # 用法: cat backup.tar.gz | mqtt-manager.sh restore
+        BK="/tmp/mqtt_manager_restore.$$"
+        mkdir -p "$BK"
+        cat > "$BK/backup.tar.gz" 2>/dev/null
+        if [ ! -s "$BK/backup.tar.gz" ]; then
+            echo "错误: 未收到备份数据"
+            rm -rf "$BK"
+            exit 1
+        fi
+        # 解包
+        tar xzf "$BK/backup.tar.gz" -C "$BK" 2>/dev/null
+        if [ ! -f "$BK/etc/config/mosquitto" ]; then
+            echo "错误: 备份包中缺少 mosquitto 配置"
+            rm -rf "$BK"
+            exit 1
+        fi
+        # 停止服务避免写入冲突
+        /etc/init.d/mosquitto stop >/dev/null 2>&1
+        # 恢复 UCI 配置
+        if [ -s "$BK/etc/config/mosquitto" ]; then
+            cp "$BK/etc/config/mosquitto" /etc/config/mosquitto
+            uci commit mosquitto >/dev/null 2>&1
+        fi
+        if [ -s "$BK/etc/config/mqtt_manager" ]; then
+            cp "$BK/etc/config/mqtt_manager" /etc/config/mqtt_manager 2>/dev/null
+            uci commit mqtt_manager >/dev/null 2>&1
+        fi
+        # 恢复 passwd
+        if [ -f "$BK/etc/mosquitto/passwd" ]; then
+            cp "$BK/etc/mosquitto/passwd" "$PASSWD_FILE"
+            chown root:root "$PASSWD_FILE"; chmod 644 "$PASSWD_FILE"
+        fi
+        # 恢复 TLS 证书
+        if [ -d "$BK/etc/mosquitto/cert" ]; then
+            mkdir -p "$CERT_DIR"
+            cp -r "$BK/etc/mosquitto/cert/." "$CERT_DIR/" 2>/dev/null
+            chmod 600 "$CERT_DIR/"*.pem 2>/dev/null
+        fi
+        rm -rf "$BK"
+        # 重建并重启
+        rm -f /tmp/mosquitto.generated.conf
+        /etc/init.d/mosquitto start >/dev/null 2>&1
+        sleep 1
+        if pidof mosquitto >/dev/null 2>&1; then
+            echo "配置恢复成功，服务已重启 (PID $(pidof mosquitto))"
+        else
+            echo "配置已恢复，但服务启动失败，请查看日志"
+        fi
+        ;;
+
     *)
-        echo "用法: $0 {status|start|stop|restart|get_conf_mode|conf_read|conf_set|conf_switch|conf_apply|conf_check [fix]|conf_raw_save|get_config|save_config|list_users|add_user|del_user|inspect [user pass host port]|save_inspect [user pass host port]|get_inspect|fw_list|fw_add|check_components|install_component|uninstall_component|tls_status|tls_save|save_password|get_password}"
+        echo "用法: $0 {status|start|stop|restart|get_conf_mode|conf_read|conf_set|conf_switch|conf_apply|conf_check [fix]|conf_raw_save|get_config|save_config|list_users|add_user|del_user|inspect [user pass host port]|save_inspect [user pass host port]|get_inspect|fw_list|fw_add|check_components|install_component|uninstall_component|tls_status|tls_save|save_password|get_password|backup|restore}"
         ;;
 esac
