@@ -30,6 +30,49 @@ pm_install() {
     fi
 }
 
+# ---------- 密码文件兜底 ----------
+# 确保 password_file 指向的文件真实存在、属主 root:root、权限 644、目录 755，
+# 并确认 mosquitto 用户可读。否则 mosquitto 启动即报
+# "Error: Unable to open pwfile" 并进入 crash loop。
+# 用法: ensure_pwfile  (无参数，自动从 UCI 读取 password_file 路径)
+ensure_pwfile() {
+    PF=$(uci -q get mosquitto.mosquitto.password_file 2>/dev/null)
+    [ -z "$PF" ] && PF=$(uci -q get mosquitto.@mosquitto[0].password_file 2>/dev/null)
+    [ -z "$PF" ] && PF="$PASSWD_FILE"
+    # 断链符号链接会让 mosquitto 打不开，直接清掉
+    [ -L "$PF" ] && rm -f "$PF" 2>/dev/null
+    # 文件不存在 -> 自动创建空文件
+    if [ ! -f "$PF" ]; then
+        mkdir -p "$(dirname "$PF")" 2>/dev/null
+        : > "$PF" 2>/dev/null
+        echo ">>> 密码文件缺失，已创建空文件: $PF"
+    fi
+    # 目录权限（mosquitto 用户需可进入读取）
+    DIR=$(dirname "$PF")
+    chmod 755 "$DIR" 2>/dev/null
+    # 文件属主/权限：root:root + 644（mosquitto 2.0.x 要求 mosquitto 用户可读）
+    chown root:root "$PF" 2>/dev/null
+    chmod 644 "$PF" 2>/dev/null
+    # 校验 mosquitto 用户是否真的可读
+    if command -v su >/dev/null 2>&1 && id mosquitto >/dev/null 2>&1; then
+        if ! su -s /bin/sh mosquitto -c "test -r '$PF'" 2>/dev/null; then
+            echo ">>> ⚠️ mosquitto 用户无法读取 $PF，已尝试修正权限"
+            chmod 644 "$PF" 2>/dev/null
+            chmod 755 "$DIR" 2>/dev/null
+        fi
+    fi
+    # 空密码文件 + 禁止匿名 = 无任何客户端可连接，明确提示
+    if [ ! -s "$PF" ] && [ "$(uci -q get mosquitto.mosquitto.allow_anonymous 2>/dev/null)" != "true" ]; then
+        echo ">>> ⚠️ 密码文件为空且禁止匿名，当前无任何可用用户，请到「用户管理」添加账号"
+    fi
+    # 让 UCI 指向真实存在的路径（避免指向别处的陈旧值）
+    CUR=$(uci -q get mosquitto.mosquitto.password_file 2>/dev/null)
+    if [ "$CUR" != "$PF" ]; then
+        uci -q set mosquitto.mosquitto.password_file="$PF" 2>/dev/null
+        uci -q commit mosquitto 2>/dev/null
+    fi
+}
+
 # ---------- status ----------
 case "$ACTION" in
     status)
@@ -45,9 +88,9 @@ case "$ACTION" in
         sleep 1
         pidof mosquitto >/dev/null 2>&1 && killall -9 mosquitto 2>/dev/null
         sleep 1
-        # 兜底: 强制走 UCI 生成配置，并确保 password_file 存在(否则所有用户认证失败/crash loop)
+        # 兜底: 强制走 UCI 生成配置，并确保 password_file 指向的文件真实存在且可读
         uci set mosquitto.owrt.use_uci='1' 2>/dev/null
-        [ -z "$(uci -q get mosquitto.mosquitto.password_file)" ] && uci set mosquitto.mosquitto.password_file="$PASSWD_FILE"
+        ensure_pwfile
         uci commit mosquitto 2>/dev/null
         # 清理重复 listener
         MAIN_PORT=$(uci -q get mosquitto.@mosquitto[0].port 2>/dev/null)
@@ -76,9 +119,9 @@ case "$ACTION" in
             pidof mosquitto >/dev/null 2>&1 && killall -9 mosquitto 2>/dev/null
             sleep 1
         }
-        # 兜底: 强制走 UCI 生成配置，并确保 password_file 存在(否则所有用户认证失败/crash loop)
+        # 兜底: 强制走 UCI 生成配置，并确保 password_file 指向的文件真实存在且可读
         uci set mosquitto.owrt.use_uci='1' 2>/dev/null
-        [ -z "$(uci -q get mosquitto.mosquitto.password_file)" ] && uci set mosquitto.mosquitto.password_file="$PASSWD_FILE"
+        ensure_pwfile
         uci commit mosquitto 2>/dev/null
         # 清理重复 listener 配置（Address in use 根因：生成conf里有两条 listener 1883）
         MAIN_PORT=$(uci -q get mosquitto.@mosquitto[0].port 2>/dev/null)
@@ -517,34 +560,48 @@ case "$ACTION" in
         fi
 
         # --- 3. password_file ---
-        PF=$(uci -q get mosquitto.@mosquitto[0].password_file 2>/dev/null)
+        PF=$(uci -q get mosquitto.mosquitto.password_file 2>/dev/null)
+        [ -z "$PF" ] && PF=$(uci -q get mosquitto.@mosquitto[0].password_file 2>/dev/null)
         if [ -n "$PF" ]; then
             echo "[3] password_file: ✅ $PF"
         else
             echo "[3] password_file: ❌ 未设置 (所有用户将认证失败)"
+            PF="$PASSWD_FILE"
             if [ "$DO_FIX" = "fix" ]; then
-                uci set mosquitto.@mosquitto[0].password_file="$PASSWD_FILE"
+                uci set mosquitto.mosquitto.password_file="$PASSWD_FILE" 2>/dev/null || uci set mosquitto.@mosquitto[0].password_file="$PASSWD_FILE"
                 uci commit mosquitto
                 echo "    - ✅ 已修复: password_file=$PASSWD_FILE"
             fi
         fi
 
-        # --- 4. passwd 文件本身 ---
-        if [ -f "$PASSWD_FILE" ]; then
-            OWNER=$(stat -c '%U:%G' "$PASSWD_FILE" 2>/dev/null || ls -l "$PASSWD_FILE" | awk '{print $3":"$4}')
-            PERM=$(stat -c '%a' "$PASSWD_FILE" 2>/dev/null)
-            echo "[4] 密码文件: ✅ 存在 ($PASSWD_FILE, 属主 $OWNER, 权限 $PERM)"
+        # --- 4. passwd 文件本身（存在性 / 属主 / 权限 / mosquitto 用户可读）---
+        if [ -f "$PF" ]; then
+            OWNER=$(stat -c '%U:%G' "$PF" 2>/dev/null || ls -l "$PF" | awk '{print $3":"$4}')
+            PERM=$(stat -c '%a' "$PF" 2>/dev/null)
+            echo "[4] 密码文件: ✅ 存在 ($PF, 属主 $OWNER, 权限 $PERM)"
             if [ "$OWNER" != "root:root" ]; then
                 echo "    - ⚠️ 属主应为 root:root (mosquitto 2.0.x 要求)"
-                [ "$DO_FIX" = "fix" ] && { chown root:root "$PASSWD_FILE"; chmod 644 "$PASSWD_FILE"; echo "    - ✅ 已修复属主/权限"; }
+                [ "$DO_FIX" = "fix" ] && { chown root:root "$PF"; chmod 644 "$PF"; echo "    - ✅ 已修复属主/权限"; }
             elif [ "$PERM" != "644" ]; then
                 echo "    - ⚠️ 权限应为 644 (mosquitto 用户需可读)"
-                [ "$DO_FIX" = "fix" ] && { chmod 644 "$PASSWD_FILE"; echo "    - ✅ 已修复权限 644"; }
+                [ "$DO_FIX" = "fix" ] && { chmod 644 "$PF"; echo "    - ✅ 已修复权限 644"; }
+            fi
+            # 以 mosquitto 用户实测可读性（这是 "Unable to open pwfile" 的真实判据）
+            if command -v su >/dev/null 2>&1 && id mosquitto >/dev/null 2>&1; then
+                if su -s /bin/sh mosquitto -c "test -r '$PF'" 2>/dev/null; then
+                    echo "    - ✅ mosquitto 用户可读"
+                else
+                    echo "    - ❌ mosquitto 用户【不可读】(启动会报 Unable to open pwfile)"
+                    [ "$DO_FIX" = "fix" ] && { chmod 755 "$(dirname "$PF")"; chown root:root "$PF"; chmod 644 "$PF"; echo "    - ✅ 已修复目录/文件权限"; }
+                fi
+            fi
+            if [ ! -s "$PF" ] && [ "$(uci -q get mosquitto.mosquitto.allow_anonymous 2>/dev/null)" != "true" ]; then
+                echo "    - ⚠️ 密码文件为空且禁止匿名：当前无任何可用用户，请到「用户管理」添加账号"
             fi
         else
-            echo "[4] 密码文件: ❌ $PASSWD_FILE 不存在"
+            echo "[4] 密码文件: ❌ $PF 不存在"
             if [ "$DO_FIX" = "fix" ]; then
-                touch "$PASSWD_FILE"; chown root:root "$PASSWD_FILE"; chmod 644 "$PASSWD_FILE"
+                mkdir -p "$(dirname "$PF")"; touch "$PF"; chown root:root "$PF"; chmod 644 "$PF"; chmod 755 "$(dirname "$PF")"
                 echo "    - ✅ 已创建空密码文件 (root:root, 644)"
             fi
         fi
@@ -727,6 +784,10 @@ case "$ACTION" in
             chmod 600 "$CERT_DIR/"*.pem 2>/dev/null
         fi
         rm -rf "$BK"
+        # 恢复后兜底：确保密码文件真实存在且可读，避免 "Unable to open pwfile"
+        uci set mosquitto.owrt.use_uci='1' 2>/dev/null
+        ensure_pwfile
+        uci commit mosquitto 2>/dev/null
         # 重建并重启
         rm -f /tmp/mosquitto.generated.conf
         /etc/init.d/mosquitto start >/dev/null 2>&1
