@@ -33,6 +33,13 @@ jobs:
       - name: 检出插件源码
         uses: actions/checkout@v4
 
+      - name: 生成编译时间戳
+        run: |
+          echo "BUILD_DATE=$(TZ=Asia/Shanghai date +%Y%m%d)" >> $GITHUB_ENV
+          echo "BUILD_TIME=$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S %Z')" >> $GITHUB_ENV
+          echo "PKG_VERSION=$(grep -oP '^PKG_VERSION:=\K.*' Makefile)" >> $GITHUB_ENV
+          echo "版本: $(grep -oP '^PKG_VERSION:=\K.*' Makefile) / 编译日期: $BUILD_DATE / $BUILD_TIME"
+
       - name: 安装解压工具并下载 SDK
         run: |
           sudo apt-get update -q
@@ -89,6 +96,8 @@ jobs:
           else
             find sdk -name "luci-app-mqtt-manager*" -name "*.ipk" -exec cp {} artifact/ \; 2>/dev/null
           fi
+          printf 'Package: luci-app-mqtt-manager\nVersion: %s-r%s\nOpenWrt: %s\nBuildTime: %s\nCommit: %s\n' \
+            "$PKG_VERSION" "$BUILD_DATE" "${{ matrix.version }}" "$BUILD_TIME" "${{ github.sha }}" > artifact/BUILD-INFO.txt
           echo "=== ${{ matrix.version }} 产物 ==="
           ls -la artifact/ || echo "(无产物)"
 

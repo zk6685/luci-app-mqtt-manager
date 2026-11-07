@@ -122,6 +122,29 @@ make package/luci-app-mqtt-manager/compile V=s
 - OpenWrt 24.10 → `.ipk`
 - OpenWrt 23.05 → `.ipk`
 
+### 版本号规则
+
+```
+luci-app-mqtt-manager-<PKG_VERSION>-r<PKG_RELEASE>.apk / .ipk
+       例: luci-app-mqtt-manager-1.1.10-r20261107.apk
+```
+
+| 字段 | 含义 | 谁维护 |
+|---|---|---|
+| `PKG_VERSION` | 语义版本，功能/修复迭代递增：1.1.9 → 1.1.10 → 1.1.11 | 手工改 Makefile |
+| `PKG_RELEASE` | **编译日期**（北京时间 `YYYYMMDD`），每次编译自动生成，无需手改 | Makefile 自动 |
+| Release tag | `v<PKG_VERSION>-<PKG_RELEASE>`，例 `v1.1.10-20261107` | 发布时对应 |
+
+每个编译产物里还带一份 `BUILD-INFO.txt`，记录精确到秒的编译时间与 commit SHA：
+
+```
+Package: luci-app-mqtt-manager
+Version: 1.1.10-r20261107
+OpenWrt: 25.12
+BuildTime: 2026-11-07 10:32:15 CST
+Commit: <sha>
+```
+
 ---
 
 ## 文件结构
