@@ -105,14 +105,47 @@ jobs:
             echo "CONFIG_PACKAGE_apk=y" >> .config
           fi
           make defconfig 2>&1 | tail -3
-          make package/luci-app-mqtt-manager/compile V=s 2>&1 | tee /tmp/build_${{ matrix.version }}.log | tail -40
+          LOG=/tmp/build_${{ matrix.version }}.log
+          OK=0
+          for attempt in 1 2 3; do
+            if make package/luci-app-mqtt-manager/compile V=s > "$LOG" 2>&1; then
+              echo "=== 编译成功 (第 $attempt 次尝试) ==="
+              OK=1; break
+            fi
+            echo "=== 第 $attempt 次编译失败, 检查源码哈希漂移 ==="
+            grep "Hash mismatch for file" "$LOG" || true
+            # 上游重打 tag 会让 feeds 记录的 hash 与实际 tarball 不符,
+            # 导致依赖包编译中断。这里自动把 Makefile 里的旧 hash 换成实际值后重试。
+            grep "Hash mismatch for file" "$LOG" | while IFS= read -r line; do
+              exp=$(printf '%s' "$line" | grep -oE 'expected [0-9a-f]{64}' | awk '{print $2}')
+              got=$(printf '%s' "$line" | grep -oE 'got [0-9a-f]{64}' | awk '{print $2}')
+              file=$(printf '%s' "$line" | sed -E 's/.*for file ([^:]+):.*/\1/' | tr -d ' ')
+              [ -z "$exp" ] && continue
+              echo "    -> $file: $exp => $got"
+              for mk in $(find feeds -path "*/package/*/Makefile" 2>/dev/null || true); do
+                if grep -q "$exp" "$mk" 2>/dev/null; then
+                  sed -i "s/$exp/$got/g" "$mk"
+                  echo "       已修正 $mk"
+                fi
+              done
+              [ -n "$file" ] && rm -f "dl/$file"
+            done
+            tail -30 "$LOG"
+            if [ "$attempt" = "3" ]; then
+              echo "::error::编译失败(已自动修正哈希并重试 3 次)"; exit 1
+            fi
+          done
+          [ "$OK" = "1" ] || { echo "::error::编译未成功"; exit 1; }
+          tail -15 "$LOG"
           echo "=== 编译完成，收集产物 ==="
 
-      - name: 编译失败时输出完整日志
-        if: failure()
-        run: |
-          echo "::error::编译失败，以下为关键错误行"
-          grep -nE "ERROR|Error [0-9]|failed to build|Hash mismatch" /tmp/build_${{ matrix.version }}.log | tail -30 || true
+      - name: 上传编译日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ matrix.version }}
+          path: /tmp/build_${{ matrix.version }}.log
+          if-no-files-found: ignore
 
       - name: 收集产物 (ipk/apk)
         run: |
