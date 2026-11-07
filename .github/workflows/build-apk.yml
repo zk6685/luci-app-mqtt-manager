@@ -43,7 +43,7 @@ jobs:
       - name: 安装解压工具并下载 SDK
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q zstd xz-utils
+          sudo apt-get install -y -q zstd xz-utils rsync bzip2
           SDK_FILE=$(curl -s "$SDK_DIR/" | grep -oE 'immortalwrt-sdk-[^"<]*\.tar\.(zst|xz)' | head -1)
           echo "SDK 文件: $SDK_FILE"
           if [ -z "$SDK_FILE" ]; then echo "::error::SDK 未找到"; exit 1; fi
@@ -81,18 +81,17 @@ jobs:
       - name: 修正 libubox 源码哈希漂移
         run: |
           cd sdk
-          # 上游重打 libubox tag 后, feeds/base 里记录的 PKG_HASH 与实际 tarball 不符:
+          # 上游重打 libubox tag 后, feeds 里记录的 PKG_HASH 与实际 tarball 不符:
           #   Hash mismatch for file libubox-1.1.10.tar.zst: expected 55b2298e... got 0fecbe5f...
-          # 若不修正, 编译会在 package/feeds/base/libubox 处中断。
-          # 这里把该包的 PKG_HASH/PKG_MIRROR_HASH 对齐为实际下载内容。
-          NEWH=0fecbe5f0d7cbdbfde93e9bc31966f8d4a3410ad04697c42ad6ba08ab7ba75c8
-          for f in $(find feeds/base -path "*libs/libubox/Makefile" 2>/dev/null); do
-            if grep -q "PKG_HASH:=55b2298e" "$f" 2>/dev/null; then
-              sed -i "s|PKG_HASH:=55b2298e[0-9a-f]*|PKG_HASH:=$NEWH|" "$f"
-              sed -i "s|PKG_MIRROR_HASH:=55b2298e[0-9a-f]*|PKG_MIRROR_HASH:=$NEWH|" "$f"
-              echo "已修正 $f 的 hash"
-            fi
+          # 注意 immortalwrt SDK 的 feed 目录名是 base_root(不是 base), 且 libubox 在
+          # package/libs/libubox/Makefile, 因此按 hash 全量搜索 feEDS 下的 Makefile。
+          OLD=55b2298ea74bb4c7267e4b615d442aeff601e0de88ec0e641e4c40eed8454e85
+          NEW=0fecbe5f0d7cbdbfde93e9bc31966f8d4a3410ad04697c42ad6ba08ab7ba75c8
+          for mk in $(grep -rl "$OLD" feeds --include=Makefile 2>/dev/null); do
+            sed -i "s/$OLD/$NEW/g" "$mk"
+            echo "已修正 $mk"
           done
+          echo "feeds 目录: $(ls feeds 2>/dev/null | tr '\n' ' ')"
           ls dl/ 2>/dev/null | grep libubox || echo "(dl 中暂无 libubox, 编译时会重新下载)"
 
       - name: 编译 (${{ matrix.version }})
@@ -104,11 +103,11 @@ jobs:
             echo "CONFIG_USE_APK=y" > .config
             echo "CONFIG_PACKAGE_apk=y" >> .config
           fi
-          make defconfig 2>&1 | tail -3
+          make FORCE=1 defconfig 2>&1 | tail -3
           LOG=/tmp/build_${{ matrix.version }}.log
           OK=0
           for attempt in 1 2 3; do
-            if make package/luci-app-mqtt-manager/compile V=s > "$LOG" 2>&1; then
+            if make FORCE=1 package/luci-app-mqtt-manager/compile V=s > "$LOG" 2>&1; then
               echo "=== 编译成功 (第 $attempt 次尝试) ==="
               OK=1; break
             fi
@@ -122,11 +121,9 @@ jobs:
               file=$(printf '%s' "$line" | sed -E 's/.*for file ([^:]+):.*/\1/' | tr -d ' ')
               [ -z "$exp" ] && continue
               echo "    -> $file: $exp => $got"
-              for mk in $(find feeds -path "*/package/*/Makefile" 2>/dev/null || true); do
-                if grep -q "$exp" "$mk" 2>/dev/null; then
-                  sed -i "s/$exp/$got/g" "$mk"
-                  echo "       已修正 $mk"
-                fi
+              for mk in $(grep -rl "$exp" feeds --include=Makefile 2>/dev/null); do
+                sed -i "s/$exp/$got/g" "$mk"
+                echo "       已修正 $mk"
               done
               [ -n "$file" ] && rm -f "dl/$file"
             done
