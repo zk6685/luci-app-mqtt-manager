@@ -70,14 +70,21 @@ jobs:
           cp Makefile README.md sdk/package/luci-app-mqtt-manager/
           echo "插件内容:" && ls sdk/package/luci-app-mqtt-manager/
 
-      - name: 更新 feeds (含 luci)
+      - name: 更新 feeds (仅 luci)
         run: |
           cd sdk
-          ./scripts/feeds update -a 2>&1 | tail -3 || true
-          ./scripts/feeds install -a 2>&1 | tail -3 || true
+          # 只更新/安装 luci feed。用 `feeds update -a` 会把 feeds/base 的最新
+          # libubox 等基础包覆盖进 package/feeds/base, 上游一旦重打 tag 就会
+          # 出现 "Hash mismatch for file libubox-x.x.x.tar.zst" 导致编译中断。
+          # 基础依赖交给 SDK 自带的版本, 只用 luci feed。
+          ./scripts/feeds update luci 2>&1 | tail -3 || true
+          ./scripts/feeds install -a -p luci 2>&1 | tail -3 || true
+          echo "--- 已安装 feeds 包数 ---"
+          ls package/feeds/ 2>/dev/null
 
       - name: 编译 (${{ matrix.version }})
         run: |
+          set -o pipefail   # 否则 make ... | tee | tail 会吞掉失败退出码, 造成"编译失败但步骤成功"
           cd sdk
           # 25.12/apk 分支启用 apk；24.10/23.05 用默认 ipkg 出 ipk
           if [ "${{ matrix.version }}" = "25.12" ]; then
@@ -85,8 +92,14 @@ jobs:
             echo "CONFIG_PACKAGE_apk=y" >> .config
           fi
           make defconfig 2>&1 | tail -3
-          make package/luci-app-mqtt-manager/compile V=s 2>&1 | tee /tmp/build_${{ matrix.version }}.log | tail -25
+          make package/luci-app-mqtt-manager/compile V=s 2>&1 | tee /tmp/build_${{ matrix.version }}.log | tail -40
           echo "=== 编译完成，收集产物 ==="
+
+      - name: 编译失败时输出完整日志
+        if: failure()
+        run: |
+          echo "::error::编译失败，以下为关键错误行"
+          grep -nE "ERROR|Error [0-9]|failed to build|Hash mismatch" /tmp/build_${{ matrix.version }}.log | tail -30 || true
 
       - name: 收集产物 (ipk/apk)
         run: |
@@ -99,7 +112,13 @@ jobs:
           printf 'Package: luci-app-mqtt-manager\nVersion: %s-r%s\nOpenWrt: %s\nBuildTime: %s\nCommit: %s\n' \
             "$PKG_VERSION" "$BUILD_DATE" "${{ matrix.version }}" "$BUILD_TIME" "${{ github.sha }}" > artifact/BUILD-INFO.txt
           echo "=== ${{ matrix.version }} 产物 ==="
-          ls -la artifact/ || echo "(无产物)"
+          ls -la artifact/
+          # 产物必须真实存在, 否则直接失败(避免空 artifact 被当成成功发布)
+          if [ "${{ matrix.version }}" = "25.12" ]; then
+            if ! ls artifact/*.apk >/dev/null 2>&1; then echo "::error::未生成 apk 产物"; exit 1; fi
+          else
+            if ! ls artifact/*.ipk >/dev/null 2>&1; then echo "::error::未生成 ipk 产物"; exit 1; fi
+          fi
 
       - name: 上传产物
         uses: actions/upload-artifact@v4
