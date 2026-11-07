@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-mqtt-manager
 PKG_VERSION:=1.0.0
-PKG_RELEASE:=3
+PKG_RELEASE:=4
 
 LUCI_TITLE:=MQTT Manager - Mosquitto Broker Management
 LUCI_DESCRIPTION:=A LuCI panel to manage, inspect and configure the Mosquitto MQTT broker (status, users, firewall, TLS, components).

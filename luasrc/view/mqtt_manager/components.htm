@@ -69,16 +69,18 @@ function compOut(msg) {
 }
 function installPkg(pkg) {
     if (!confirm("<%:确认安装 %>" + pkg + " ?")) return;
-    compOut(">>> 开始安装 " + pkg + " ...");
+    document.getElementById("comp-output").textContent += "<%:正在安装，请稍候...%>\n";
     api("install_component", {pkg:pkg}).then(function(r){return r.json()}).then(function(d){
+        document.getElementById("comp-output").textContent = "";
         compOut(d.msg);
         setTimeout(loadComp, 5000);
     });
 }
 function uninstallPkg(pkg) {
     if (!confirm("<%:确认卸载 %>" + pkg + " ? <%:该操作会移除该组件%>")) return;
-    compOut(">>> 开始卸载 " + pkg + " ...");
+    document.getElementById("comp-output").textContent += "<%:正在卸载，请稍候...%>\n";
     api("uninstall_component", {pkg:pkg}).then(function(r){return r.json()}).then(function(d){
+        document.getElementById("comp-output").textContent = "";
         compOut(d.msg);
         setTimeout(loadComp, 3000);
     });

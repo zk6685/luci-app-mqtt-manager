@@ -22,7 +22,9 @@ pm_installed() {
 }
 
 pm_install() {
+    cd / 2>/dev/null   # 避免 apk post-install 因 cwd 无效报 fchdir: Not a directory
     if command -v apk >/dev/null 2>&1; then
+        mkdir -p /lib/apk/exec 2>/dev/null
         apk add "$1" >/dev/null 2>&1
     elif command -v opkg >/dev/null 2>&1; then
         opkg update >/dev/null 2>&1
@@ -379,19 +381,33 @@ case "$ACTION" in
 
     install_component)
         PKG="$2"
+        # apk 执行 post-install 脚本时会 fchdir 到自己的工作目录；LuCI 调起本脚本时
+        # cwd 可能指向已被清理的临时目录，导致 "fchdir: Not a directory" + 脚本 exit 127。
+        # 切到 / 并把 exec 目录准备好，可消除该报错。
+        cd / 2>/dev/null
+        mkdir -p /lib/apk/exec 2>/dev/null; chmod 755 /lib/apk/exec 2>/dev/null
         echo ">>> 开始安装 $PKG ..."
         TMP=$(mktemp)
         if command -v apk >/dev/null 2>&1; then
             apk add "$PKG" >"$TMP" 2>&1; RC=$?
         elif command -v opkg >/dev/null 2>&1; then
-            opkg update >/dev/null 2>&1
-            opkg install "$PKG" >"$TMP" 2>&1; RC=$?
+            ( cd / && opkg update >/dev/null 2>&1 )
+            ( cd / && opkg install "$PKG" >"$TMP" 2>&1 ); RC=$?
         else
             echo ">>> 错误: 无 apk/opkg 包管理器"; rm -f "$TMP"; exit 1
         fi
-        tail -8 "$TMP"; rm -f "$TMP"
+        tail -8 "$TMP"
+        # 如实统计 apk/opkg 报出的错误行（post-install 失败不能被吞掉
+        ERRS=$(grep -cE 'ERROR|error 127|fchdir' "$TMP" 2>/dev/null)
+        [ -z "$ERRS" ] && ERRS=0
+        rm -f "$TMP"
         if pm_installed "$PKG"; then
-            echo ">>> ✅ $PKG 安装成功"
+            if [ "$ERRS" -gt 0 ]; then
+                echo ">>> ⚠️ $PKG 主程序已安装，但安装脚本(post-install)报错 $ERRS 处（退出码 $RC）"
+                echo ">>> 通常不影响命令行工具本身；若功能异常，请在 SSH 执行: cd / && apk add --force-overwrite $PKG"
+            else
+                echo ">>> ✅ $PKG 安装成功"
+            fi
         else
             echo ">>> ❌ $PKG 安装失败 (退出码 $RC)"
             exit 1
@@ -400,6 +416,7 @@ case "$ACTION" in
 
     uninstall_component)
         PKG="$2"
+        cd / 2>/dev/null
         echo ">>> 开始卸载 $PKG ..."
         TMP=$(mktemp)
         if command -v apk >/dev/null 2>&1; then
