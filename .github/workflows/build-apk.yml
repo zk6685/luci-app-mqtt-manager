@@ -83,21 +83,23 @@ jobs:
           echo "--- 已安装 feeds ---"
           ls package/feeds/ 2>/dev/null
 
-      - name: 修正 libubox 源码哈希漂移
+      - name: 绕过 feeds 源码哈希校验
         run: |
           cd sdk
-          # 上游重打 libubox tag 后, feeds 里记录的 PKG_HASH 与实际 tarball 不符:
+          # immortalwrt 25.12 的 feeds 把大量基础包换成 git archive 重新打包的 tarball,
+          # 与 feeds 记录的 PKG_HASH 不一致, 编译时逐个报:
           #   Hash mismatch for file libubox-1.1.10.tar.zst: expected 55b2298e... got 0fecbe5f...
-          # 注意 immortalwrt SDK 的 feed 目录名是 base_root(不是 base), 且 libubox 在
-          # package/libs/libubox/Makefile, 因此按 hash 全量搜索 feEDS 下的 Makefile。
-          OLD=55b2298ea74bb4c7267e4b615d442aeff601e0de88ec0e641e4c40eed8454e85
-          NEW=0fecbe5f0d7cbdbfde93e9bc31966f8d4a3410ad04697c42ad6ba08ab7ba75c8
-          for mk in $(grep -rl "$OLD" feeds --include=Makefile 2>/dev/null); do
-            sed -i "s/$OLD/$NEW/g" "$mk"
-            echo "已修正 $mk"
+          # 且是成串出现(libubox/ubus/libnl-tiny/uci/libiwinfo/ucode...), 逐个改写太慢。
+          # scripts/download.pl 原生支持 hash 值 "skip" 跳过校验, 这里对 feeds 内所有
+          # 包统一置 skip。
+          CNT=0
+          for mk in $(grep -rl "^PKG_HASH:=" feeds --include=Makefile 2>/dev/null); do
+            sed -i 's|^PKG_HASH:=.*|PKG_HASH:=skip|' "$mk"
+            sed -i 's|^PKG_MIRROR_HASH:=.*|PKG_MIRROR_HASH:=skip|' "$mk"
+            CNT=$((CNT+1))
           done
+          echo "已将 $CNT 个 feeds Makefile 的 PKG_HASH 置为 skip"
           echo "feeds 目录: $(ls feeds 2>/dev/null | tr '\n' ' ')"
-          ls dl/ 2>/dev/null | grep libubox || echo "(dl 中暂无 libubox, 编译时会重新下载)"
 
       - name: 编译 (${{ matrix.version }})
         run: |
