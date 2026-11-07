@@ -14,18 +14,23 @@ on:
 jobs:
   build:
     name: Build ${{ matrix.version }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - version: 25.12
+            os: ubuntu-latest
             sdk_dir: "https://downloads.immortalwrt.org/releases/25.12.0/targets/mediatek/filogic"
             compress: zst
           - version: 24.10
+            os: ubuntu-latest
             sdk_dir: "https://downloads.immortalwrt.org/releases/24.10.6/targets/mediatek/filogic"
             compress: zst
+          # 23.05 的 SDK 依赖 python3-distutils 等老 host 工具, 24.04 runner 上
+          # prereq 检查会失败(Prerequisite check failed), 固定用 22.04
           - version: 23.05
+            os: ubuntu-22.04
             sdk_dir: "https://downloads.immortalwrt.org/releases/23.05.7/targets/mediatek/filogic"
             compress: xz
 
@@ -106,7 +111,7 @@ jobs:
           make FORCE=1 defconfig 2>&1 | tail -3
           LOG=/tmp/build_${{ matrix.version }}.log
           OK=0
-          for attempt in 1 2 3; do
+          for attempt in 1 2 3 4 5; do
             if make FORCE=1 package/luci-app-mqtt-manager/compile V=s > "$LOG" 2>&1; then
               echo "=== 编译成功 (第 $attempt 次尝试) ==="
               OK=1; break
@@ -119,17 +124,17 @@ jobs:
               exp=$(printf '%s' "$line" | grep -oE 'expected [0-9a-f]{64}' | awk '{print $2}')
               got=$(printf '%s' "$line" | grep -oE 'got [0-9a-f]{64}' | awk '{print $2}')
               file=$(printf '%s' "$line" | sed -E 's/.*for file ([^:]+):.*/\1/' | tr -d ' ')
-              [ -z "$exp" ] && continue
+              if [ -z "$exp" ]; then continue; fi
               echo "    -> $file: $exp => $got"
               for mk in $(grep -rl "$exp" feeds --include=Makefile 2>/dev/null); do
                 sed -i "s/$exp/$got/g" "$mk"
                 echo "       已修正 $mk"
               done
-              [ -n "$file" ] && rm -f "dl/$file"
-            done
+              if [ -n "$file" ]; then rm -f "dl/$file"; fi || true
+            done || true
             tail -30 "$LOG"
-            if [ "$attempt" = "3" ]; then
-              echo "::error::编译失败(已自动修正哈希并重试 3 次)"; exit 1
+            if [ "$attempt" = "5" ]; then
+              echo "::error::编译失败(已自动修正哈希并重试 5 次)"; exit 1
             fi
           done
           [ "$OK" = "1" ] || { echo "::error::编译未成功"; exit 1; }
