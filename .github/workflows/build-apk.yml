@@ -70,17 +70,30 @@ jobs:
           cp Makefile README.md sdk/package/luci-app-mqtt-manager/
           echo "插件内容:" && ls sdk/package/luci-app-mqtt-manager/
 
-      - name: 更新 feeds (仅 luci)
+      - name: 更新 feeds
         run: |
           cd sdk
-          # 只更新/安装 luci feed。用 `feeds update -a` 会把 feeds/base 的最新
-          # libubox 等基础包覆盖进 package/feeds/base, 上游一旦重打 tag 就会
-          # 出现 "Hash mismatch for file libubox-x.x.x.tar.zst" 导致编译中断。
-          # 基础依赖交给 SDK 自带的版本, 只用 luci feed。
-          ./scripts/feeds update luci 2>&1 | tail -3 || true
-          ./scripts/feeds install -a -p luci 2>&1 | tail -3 || true
-          echo "--- 已安装 feeds 包数 ---"
+          ./scripts/feeds update -a 2>&1 | tail -3 || true
+          ./scripts/feeds install -a 2>&1 | tail -3 || true
+          echo "--- 已安装 feeds ---"
           ls package/feeds/ 2>/dev/null
+
+      - name: 修正 libubox 源码哈希漂移
+        run: |
+          cd sdk
+          # 上游重打 libubox tag 后, feeds/base 里记录的 PKG_HASH 与实际 tarball 不符:
+          #   Hash mismatch for file libubox-1.1.10.tar.zst: expected 55b2298e... got 0fecbe5f...
+          # 若不修正, 编译会在 package/feeds/base/libubox 处中断。
+          # 这里把该包的 PKG_HASH/PKG_MIRROR_HASH 对齐为实际下载内容。
+          NEWH=0fecbe5f0d7cbdbfde93e9bc31966f8d4a3410ad04697c42ad6ba08ab7ba75c8
+          for f in $(find feeds/base -path "*libs/libubox/Makefile" 2>/dev/null); do
+            if grep -q "PKG_HASH:=55b2298e" "$f" 2>/dev/null; then
+              sed -i "s|PKG_HASH:=55b2298e[0-9a-f]*|PKG_HASH:=$NEWH|" "$f"
+              sed -i "s|PKG_MIRROR_HASH:=55b2298e[0-9a-f]*|PKG_MIRROR_HASH:=$NEWH|" "$f"
+              echo "已修正 $f 的 hash"
+            fi
+          done
+          ls dl/ 2>/dev/null | grep libubox || echo "(dl 中暂无 libubox, 编译时会重新下载)"
 
       - name: 编译 (${{ matrix.version }})
         run: |
